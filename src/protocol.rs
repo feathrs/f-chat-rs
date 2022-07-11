@@ -8,7 +8,7 @@ use std::io::Write as _;
 // ServerCommand can be deserialized
 // But mutually they can suck one.
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 struct CommandDummy {
     command: String, // This was originally &'a str, but this caused serde to complain about Deserialize having insufficient lifetimes.
     data: Value,
@@ -44,7 +44,7 @@ pub fn prepare_command(command: &ClientCommand) -> String {
 // Being a 3 character command code, followed by JSON data
 // This is fine.
 
-#[derive(Serialize, PartialEq, Eq)]
+#[derive(Serialize, PartialEq, Eq, Debug)]
 #[serde(tag = "command", content = "data")]
 pub enum ClientCommand {
     #[serde(rename = "ACB")]
@@ -198,7 +198,7 @@ pub enum ClientCommand {
     Uptime,
 }
 
-#[derive(Deserialize, PartialEq, Eq)]
+#[derive(Deserialize, PartialEq, Eq, Debug)]
 #[serde(tag = "command", content = "data")]
 pub enum ServerCommand {
     #[serde(rename = "ADL")]
@@ -410,12 +410,12 @@ pub enum ServerCommand {
     }, // Could be int, float, [string]; I hate it. Use an adjacently tagged enum.
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct CharacterIdentity {
     pub identity: String,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum KinkResponsePart {
     Start,
@@ -423,17 +423,17 @@ pub enum KinkResponsePart {
     End,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct CharacterData(pub Character, pub Gender, pub Status, pub String); // Last part is status message
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct ChannelInfo {
     pub name: Channel,
     pub characters: u32,
     pub title: String,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum ProfileDataPart {
     Start,
@@ -442,19 +442,19 @@ pub enum ProfileDataPart {
     Select,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum ReportAction {
     Report,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum IdentifyMethod {
     Ticket,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum IgnoreAction {
     Add,
