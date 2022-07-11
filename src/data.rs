@@ -10,7 +10,7 @@ pub enum Gender {
     Shemale,
     #[serde(rename = "Male-Herm")]
     MaleHerm,
-    #[serde(rename = "Cunt-Boy")]
+    #[serde(rename = "Cunt-boy")]
     CBoy, // Look, I don't make the rules.
     None,
 }
