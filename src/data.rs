@@ -82,22 +82,6 @@ pub enum Role {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum IdentifyMethod {
-    Ticket,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum IgnoreAction {
-    Add,
-    Delete,
-    Notify,
-    List,
-    Init,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum ChannelMode {
     #[serde(rename = "chat")]
     ChatOnly,
@@ -111,12 +95,6 @@ pub enum ChannelMode {
 pub enum ChannelStatus {
     Public,
     Private,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ReportAction {
-    Report,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -137,38 +115,6 @@ pub enum TypingStatus {
     Clear,
     Paused,
     Typing,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct CharacterIdentity {
-    identity: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum KinkResponsePart {
-    Start,
-    Custom,
-    End,
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct CharacterData(Character, Gender, Status, String); // Last part is status message
-
-#[derive(Serialize, Deserialize)]
-pub struct ChannelInfo {
-    name: Channel,
-    characters: u32,
-    title: String,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ProfileDataPart {
-    Start,
-    End,
-    Info,
-    Select,
 }
 
 // Strong typing for string IDs

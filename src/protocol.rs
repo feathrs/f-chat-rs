@@ -408,3 +408,57 @@ pub enum ServerCommand {
         value: serde_json::Value,
     }, // Could be int, float, [string]; I hate it. Use an adjacently tagged enum.
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct CharacterIdentity {
+    identity: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KinkResponsePart {
+    Start,
+    Custom,
+    End,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CharacterData(Character, Gender, Status, String); // Last part is status message
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelInfo {
+    name: Channel,
+    characters: u32,
+    title: String,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ProfileDataPart {
+    Start,
+    End,
+    Info,
+    Select,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ReportAction {
+    Report,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IdentifyMethod {
+    Ticket,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum IgnoreAction {
+    Add,
+    Delete,
+    Notify,
+    List,
+    Init,
+}
