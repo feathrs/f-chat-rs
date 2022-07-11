@@ -7,48 +7,48 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
 #[serde(tag = "command", content = "data")]
-enum ClientCommand {
+pub enum ClientCommand {
     #[serde(rename = "ACB")]
-    GlobalBan { character: String },
+    GlobalBan { character: Character },
     #[serde(rename = "AOP")]
-    GlobalOp { character: String },
+    GlobalOp { character: Character },
     #[serde(rename = "CRC")]
     GlobalCreateChannel { name: String },
     #[serde(rename = "DOP")]
-    GlobalDeop { character: String },
+    GlobalDeop { character: Character },
     #[serde(rename = "AWC")]
-    Alts { character: String },
+    Alts { character: Character },
     #[serde(rename = "BRO")]
     Broadcast { message: String },
     #[serde(rename = "CBL")]
-    Banlist { channel: String },
+    Banlist { channel: Channel },
     #[serde(rename = "CBU")]
-    Ban { channel: String, character: String },
+    Ban { channel: Channel, character: Character },
     #[serde(rename = "COA")]
-    Op { channel: String, character: String },
+    Op { channel: Channel, character: Character },
     #[serde(rename = "CCR")]
     CreateChannel { name: String },
     #[serde(rename = "CDS")]
     ChangeDescription {
-        channel: String,
+        channel: Channel,
         description: String,
     },
     #[serde(rename = "CHA")]
     GlobalChannels,
     #[serde(rename = "CIU")]
-    ChannelInviteUser { channel: String, character: String },
+    ChannelInviteUser { channel: Channel, character: Character },
     #[serde(rename = "CKU")]
-    Kick { channel: String, character: String },
+    Kick { channel: Channel, character: Character },
     #[serde(rename = "COL")]
-    Ops { channel: String },
+    Ops { channel: Channel },
     #[serde(rename = "COR")]
-    Deop { channel: String, character: String },
+    Deop { channel: Channel, character: Character },
     #[serde(rename = "CSO")]
-    SetOwner { channel: String, character: String },
+    SetOwner { channel: Channel, character: Character },
     #[serde(rename = "CTU")]
-    Timeout { channel: String, character: String },
+    Timeout { channel: Channel, character: Character },
     #[serde(rename = "CUB")]
-    Pardon { channel: String, character: String },
+    Pardon { channel: Channel, character: Character },
     #[serde(rename = "FKS")]
     Search {
         kinks: Vec<u32>,
@@ -63,153 +63,153 @@ enum ClientCommand {
         method: IdentifyMethod,
         account: String,
         ticket: String,
-        character: String,
+        character: Character,
         cname: String,
         cversion: String,
     }, // method should always be "ticket"
     #[serde(rename = "IGN")]
     IgnoreList {
         action: IgnoreAction,
-        character: String,
+        character: Character,
     }, // This is terrible. Review later for constant field tagging.
     #[serde(rename = "JCH")]
-    JoinChannel { channel: String },
+    JoinChannel { channel: Channel },
     #[serde(rename = "KIC")]
-    DeleteChannel { channel: String },
+    DeleteChannel { channel: Channel },
     #[serde(rename = "KIK")]
-    GlobalKick { channel: String },
+    GlobalKick { channel: Channel },
     #[serde(rename = "KIN")]
-    Kinks { character: String }, // Advised to use JSON endpoint
+    Kinks { character: Character }, // Advised to use JSON endpoint
     #[serde(rename = "LCH")]
-    LeaveChannel { channel: String },
+    LeaveChannel { channel: Channel },
     #[serde(rename = "LRP")]
-    Ad { channel: String, message: String },
+    Ad { channel: Channel, message: String },
     #[serde(rename = "MSG")]
-    Message { channel: String, message: String },
+    Message { channel: Channel, message: String },
     #[serde(rename = "ORS")]
     Channels,
     #[serde(rename = "PIN")]
     Pong,
     #[serde(rename = "PRI")]
-    PrivateMessage { recipient: String, message: String },
+    PrivateMessage { recipient: Character, message: String },
     #[serde(rename = "PRO")]
-    ProfileTags { character: String }, // Advised to use JSON endpoint
+    ProfileTags { character: Character }, // Advised to use JSON endpoint
     #[serde(rename = "RLL")]
-    Roll { channel: String, dice: String },
+    Roll { channel: Channel, dice: String },
     #[serde(rename = "RLD")]
     Reload { save: String }, // ???
     #[serde(rename = "RMO")]
-    ChannelMode { channel: String, mode: ChannelMode },
+    ChannelMode { channel: Channel, mode: ChannelMode },
     #[serde(rename = "RST")]
     ChannelStatus {
-        channel: String,
+        channel: Channel,
         status: ChannelStatus,
     },
     #[serde(rename = "RWD")]
-    Reward { character: String },
+    Reward { character: Character },
     #[serde(rename = "SFC")]
     Report {
         action: ReportAction,
         report: String,
-        character: String,
+        character: Character,
     }, // action is always 'report'
     #[serde(rename = "STA")]
     Status { status: Status, statusmsg: String },
     #[serde(rename = "TMO")]
     GlobalTimeout {
-        character: String,
+        character: Character,
         time: u32,
         reason: String,
     },
     #[serde(rename = "TPN")]
     Typing {
-        character: String,
+        character: Character,
         status: TypingStatus,
     },
     #[serde(rename = "UNB")]
-    GlobalPardon { character: String },
+    GlobalPardon { character: Character },
     #[serde(rename = "UPT")]
     Uptime,
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "command", content = "data")]
-enum ServerCommand {
+pub enum ServerCommand {
     #[serde(rename = "ADL")]
-    GlobalOps { ops: Vec<String> },
+    GlobalOps { ops: Vec<Character> },
     #[serde(rename = "AOP")]
-    GlobalOpped { character: String },
+    GlobalOpped { character: Character },
     #[serde(rename = "BRO")]
     Broadcast { message: String },
     #[serde(rename = "CDS")]
     ChannelDescription {
-        channel: String,
+        channel: Channel,
         description: String,
     },
     #[serde(rename = "CHA")]
-    GlobalChannels { channels: Vec<String> },
+    GlobalChannels { channels: Vec<Channel> },
     #[serde(rename = "CIU")]
     Invited {
-        sender: String,
+        sender: Character,
         title: String,
-        name: String,
+        name: Channel,
     },
     #[serde(rename = "CBU")]
     Banned {
-        operator: String,
-        channel: String,
-        character: String,
+        operator: Character,
+        channel: Channel,
+        character: Character,
     },
     #[serde(rename = "CKU")]
     Kicked {
-        operator: String,
-        channel: String,
-        character: String,
+        operator: Character,
+        channel: Channel,
+        character: Character,
     },
     #[serde(rename = "COA")]
-    Opped { character: String, channel: String },
+    Opped { character: Character, channel: Channel },
     #[serde(rename = "COL")]
     Ops {
-        channel: String,
-        oplist: Vec<String>,
+        channel: Channel,
+        oplist: Vec<Character>,
     },
     #[serde(rename = "CON")]
     Connected { count: u32 },
     #[serde(rename = "COR")]
-    Deopped { character: String, channel: String },
+    Deopped { character: Character, channel: Channel },
     #[serde(rename = "CSO")]
-    SetOwner { character: String, channel: String },
+    SetOwner { character: Character, channel: Channel },
     #[serde(rename = "CTU")]
     Timeout {
-        channel: String,
-        character: String,
+        channel: Channel,
+        character: Character,
         length: u32,
-        operator: String,
+        operator: Character,
     },
     #[serde(rename = "DOP")]
-    GlobalDeopped { character: String },
+    GlobalDeopped { character: Character },
     #[serde(rename = "ERR")]
     Error { number: u32, message: String },
     #[serde(rename = "FKS")]
     Search {
-        characters: Vec<String>,
+        characters: Vec<Character>,
         kinks: Vec<u32>,
     },
     #[serde(rename = "FLN")]
-    Offline { character: String },
+    Offline { character: Character },
     #[serde(rename = "HLO")]
     Hello { message: String },
     #[serde(rename = "ICH")]
     ChannelData {
         users: Vec<CharacterIdentity>,
-        channel: String,
+        channel: Channel,
         mode: ChannelMode,
     },
     #[serde(rename = "IDN")]
-    IdentifySuccess { character: String },
+    IdentifySuccess { character: Character },
     #[serde(rename = "JCH")]
     JoinedChannel {
-        channel: String,
+        channel: Channel,
         character: CharacterIdentity,
         title: String,
     },
@@ -222,14 +222,14 @@ enum ServerCommand {
         value: Vec<u32>,
     },
     #[serde(rename = "LCH")]
-    LeftChannel { channel: String, character: String },
+    LeftChannel { channel: Channel, character: Character },
     #[serde(rename = "LIS")]
     ListOnline { characters: Vec<CharacterData> },
     #[serde(rename = "NLN")]
     NewConnection {
         status: Status,
         gender: Gender,
-        identity: String,
+        identity: Character,
     },
     #[serde(rename = "IGN")]
     Ignore {
@@ -237,7 +237,7 @@ enum ServerCommand {
         #[serde(default)]
         characters: Vec<String>,
         #[serde(default)]
-        character: String,
+        character: Character,
     }, // Thanks, F-List. 'Characters' only when init/list
     #[serde(rename = "FRL")]
     Friends { characters: String },
@@ -257,43 +257,43 @@ enum ServerCommand {
         value: String,
     },
     #[serde(rename = "PRI")]
-    PrivateMessage { character: String, message: String },
+    PrivateMessage { character: Character, message: String },
     #[serde(rename = "MSG")]
     Message {
-        character: String,
+        character: Character,
         message: String,
-        channel: String,
+        channel: Channel,
     },
     #[serde(rename = "LRP")]
     Ad {
-        character: String,
+        character: Character,
         message: String,
-        channel: String,
+        channel: Channel,
     },
     #[serde(rename = "RLL")]
     Roll {
-        channel: String,
+        channel: Channel,
         results: u32,
         #[serde(rename = "type")]
         response_type: String,
         rolls: Vec<String>,
-        character: String,
+        character: Character,
         endresult: u32,
         message: String,
     },
     #[serde(rename = "RMO")]
-    ChannelMode { mode: ChannelMode, channel: String },
+    ChannelMode { mode: ChannelMode, channel: Channel },
     #[serde(rename = "RTB")]
     BridgeEvent {
         #[serde(rename = "type")]
         response_type: String,
-        character: String,
+        character: Character,
     },
     #[serde(rename = "SFC")]
     Report {
         action: String,
-        moderator: String,
-        character: String,
+        moderator: Character,
+        character: Character,
         timestamp: String,
         callid: u32,
         report: String,
@@ -302,14 +302,14 @@ enum ServerCommand {
     #[serde(rename = "STA")]
     Status {
         status: Status,
-        character: String,
+        character: Character,
         statusmsg: String,
     },
     #[serde(rename = "SYS")]
-    SystemMessage { message: String, channel: String }, // Catch-all response for many things. Fuck this universe.
+    SystemMessage { message: String, channel: Channel }, // Catch-all response for many things. Fuck this universe.
     #[serde(rename = "TPN")]
     Typing {
-        character: String,
+        character: Character,
         status: TypingStatus,
     },
     #[serde(rename = "UPT")]
@@ -330,32 +330,35 @@ enum ServerCommand {
 }
 
 #[derive(Serialize, Deserialize)]
-enum Gender {
+#[serde(rename_all="PascalCase")]
+pub enum Gender {
     Male,
     Female,
     Transgender,
     Herm,
     Shemale,
-    MaleHerm,
-    CBoy,
+    #[serde(rename="Male-Herm")] MaleHerm,
+    #[serde(rename="Cunt-Boy")] CBoy, // Look, I don't make the rules.
     None,
 }
 
 #[derive(Serialize, Deserialize)]
-enum Orientation {
+#[serde(rename_all="PascalCase")]
+pub enum Orientation {
     Straight,
     Gay,
     Bisexual,
     Asexual,
     Unsure,
-    BiMalePref,
-    BiFemalePref,
+    #[serde(rename="Bi - male preference")] BiMalePref,
+    #[serde(rename="Bi - female preference")] BiFemalePref,
     Pansexual,
-    Bicurious,
+    #[serde(rename="Bi-curious")] Bicurious,
 }
 
 #[derive(Serialize, Deserialize)]
-enum Language {
+#[serde(rename_all="PascalCase")]
+pub enum Language {
     Dutch,
     English,
     French,
@@ -373,31 +376,34 @@ enum Language {
 }
 
 #[derive(Serialize, Deserialize)]
-enum FurryPreference {
-    HumanOnly,
-    HumanPref,
-    Both,
-    FurryPref,
-    FurryOnly,
+pub enum FurryPreference {
+    #[serde(rename="No furry characters, just humans")] HumanOnly,
+    #[serde(rename="Furries ok, Humans Preferred")] HumanPref,
+    #[serde(rename="Furs and / or humans")] Both,
+    #[serde(rename="Humans ok, Furries Preferred")] FurryPref,
+    #[serde(rename="No humans, just furry characters")] FurryOnly,
 }
 
 #[derive(Serialize, Deserialize)]
-enum Role {
-    AlwaysDom,
-    UsuallyDom,
+#[serde(rename_all="PascalCase")]
+pub enum Role {
+    #[serde(rename="Always dominant")] AlwaysDom,
+    #[serde(rename="Usually dominant")] UsuallyDom,
     Switch,
-    UsuallySub,
-    AlwaysSub,
+    #[serde(rename="Usually submissive")] UsuallySub,
+    #[serde(rename="Always submissive")] AlwaysSub,
     None,
 }
 
 #[derive(Serialize, Deserialize)]
-enum IdentifyMethod {
+#[serde(rename_all="lowercase")]
+pub enum IdentifyMethod {
     Ticket,
 }
 
 #[derive(Serialize, Deserialize)]
-enum IgnoreAction {
+#[serde(rename_all="lowercase")]
+pub enum IgnoreAction {
     Add,
     Delete,
     Notify,
@@ -406,25 +412,29 @@ enum IgnoreAction {
 }
 
 #[derive(Serialize, Deserialize)]
-enum ChannelMode {
-    ChatOnly,
-    AdsOnly,
+#[serde(rename_all="lowercase")]
+pub enum ChannelMode {
+    #[serde(rename="chat")] ChatOnly,
+    #[serde(rename="ads")] AdsOnly,
     Both,
 }
 
 #[derive(Serialize, Deserialize)]
-enum ChannelStatus {
+#[serde(rename_all="lowercase")]
+pub enum ChannelStatus {
     Public,
     Private,
 }
 
 #[derive(Serialize, Deserialize)]
-enum ReportAction {
+#[serde(rename_all="lowercase")]
+pub enum ReportAction {
     Report,
 }
 
 #[derive(Serialize, Deserialize)]
-enum Status {
+#[serde(rename_all="lowercase")]
+pub enum Status {
     Online,
     Looking,
     Busy,
@@ -435,38 +445,45 @@ enum Status {
 }
 
 #[derive(Serialize, Deserialize)]
-enum TypingStatus {
+#[serde(rename_all="lowercase")]
+pub enum TypingStatus {
     Clear,
     Paused,
     Typing,
 }
 
 #[derive(Serialize, Deserialize)]
-struct CharacterIdentity {
+pub struct CharacterIdentity {
     identity: String,
 }
 
 #[derive(Serialize, Deserialize)]
-enum KinkResponsePart {
+#[serde(rename_all="lowercase")]
+pub enum KinkResponsePart {
     Start,
     Custom,
     End,
 }
 
 #[derive(Serialize, Deserialize)]
-struct CharacterData(String, Gender, Status, String);
+pub struct CharacterData(Character, Gender, Status, String); // Last part is status message
 
 #[derive(Serialize, Deserialize)]
-struct ChannelInfo {
-    name: String,
+pub struct ChannelInfo {
+    name: Channel,
     characters: u32,
     title: String,
 }
 
 #[derive(Serialize, Deserialize)]
-enum ProfileDataPart {
+#[serde(rename_all="lowercase")]
+pub enum ProfileDataPart {
     Start,
     End,
     Info,
     Select,
 }
+
+// Strong typing for string IDs
+#[derive(Serialize, Deserialize, Default, Clone)] pub struct Channel(String);
+#[derive(Serialize, Deserialize, Default, Clone)] pub struct Character(String);
