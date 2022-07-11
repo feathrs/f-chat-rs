@@ -412,7 +412,7 @@ pub enum ServerCommand {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct CharacterIdentity {
-    identity: String,
+    pub identity: String,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
@@ -424,13 +424,13 @@ pub enum KinkResponsePart {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
-pub struct CharacterData(Character, Gender, Status, String); // Last part is status message
+pub struct CharacterData(pub Character, pub Gender, pub Status, pub String); // Last part is status message
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChannelInfo {
-    name: Channel,
-    characters: u32,
-    title: String,
+    pub name: Channel,
+    pub characters: u32,
+    pub title: String,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq)]
