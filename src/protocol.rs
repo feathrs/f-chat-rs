@@ -15,6 +15,7 @@ struct CommandDummy {
 }
 
 // Use Serde to convert them to/from adjacent format
+// These should later return a specific Result instead.
 pub fn parse_command(command: &str) -> ServerCommand {
     // Split the command into the JSON data body and the command head
     let (head, data) = command.split_at(4);
@@ -43,7 +44,7 @@ pub fn prepare_command(command: &ClientCommand) -> String {
 // Being a 3 character command code, followed by JSON data
 // This is fine.
 
-#[derive(Serialize)]
+#[derive(Serialize, PartialEq, Eq)]
 #[serde(tag = "command", content = "data")]
 pub enum ClientCommand {
     #[serde(rename = "ACB")]
@@ -197,7 +198,7 @@ pub enum ClientCommand {
     Uptime,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, PartialEq, Eq)]
 #[serde(tag = "command", content = "data")]
 pub enum ServerCommand {
     #[serde(rename = "ADL")]
@@ -409,12 +410,12 @@ pub enum ServerCommand {
     }, // Could be int, float, [string]; I hate it. Use an adjacently tagged enum.
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct CharacterIdentity {
     identity: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum KinkResponsePart {
     Start,
@@ -422,17 +423,17 @@ pub enum KinkResponsePart {
     End,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct CharacterData(Character, Gender, Status, String); // Last part is status message
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChannelInfo {
     name: Channel,
     characters: u32,
     title: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ProfileDataPart {
     Start,
@@ -441,19 +442,19 @@ pub enum ProfileDataPart {
     Select,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ReportAction {
     Report,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum IdentifyMethod {
     Ticket,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum IgnoreAction {
     Add,

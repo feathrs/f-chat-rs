@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub enum Gender {
     Male,
@@ -15,7 +15,7 @@ pub enum Gender {
     None,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub enum Orientation {
     Straight,
@@ -32,7 +32,7 @@ pub enum Orientation {
     Bicurious,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub enum Language {
     Dutch,
@@ -51,7 +51,7 @@ pub enum Language {
     Other,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 pub enum FurryPreference {
     #[serde(rename = "No furry characters, just humans")]
     HumanOnly,
@@ -65,7 +65,7 @@ pub enum FurryPreference {
     FurryOnly,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub enum Role {
     #[serde(rename = "Always dominant")]
@@ -80,7 +80,7 @@ pub enum Role {
     None,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ChannelMode {
     #[serde(rename = "chat")]
@@ -90,14 +90,14 @@ pub enum ChannelMode {
     Both,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ChannelStatus {
     Public,
     Private,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
     Online,
@@ -109,7 +109,7 @@ pub enum Status {
     Crown, // If you try to set crown, you will die.
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TypingStatus {
     Clear,
@@ -118,7 +118,7 @@ pub enum TypingStatus {
 }
 
 // Strong typing for string IDs
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct Channel(String);
-#[derive(Serialize, Deserialize, Default, Clone)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq)]
 pub struct Character(String);
