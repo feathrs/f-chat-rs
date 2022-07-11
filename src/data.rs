@@ -23,9 +23,15 @@ pub enum ClientCommand {
     #[serde(rename = "CBL")]
     Banlist { channel: Channel },
     #[serde(rename = "CBU")]
-    Ban { channel: Channel, character: Character },
+    Ban {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "COA")]
-    Op { channel: Channel, character: Character },
+    Op {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "CCR")]
     CreateChannel { name: String },
     #[serde(rename = "CDS")]
@@ -36,19 +42,37 @@ pub enum ClientCommand {
     #[serde(rename = "CHA")]
     GlobalChannels,
     #[serde(rename = "CIU")]
-    ChannelInviteUser { channel: Channel, character: Character },
+    ChannelInviteUser {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "CKU")]
-    Kick { channel: Channel, character: Character },
+    Kick {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "COL")]
     Ops { channel: Channel },
     #[serde(rename = "COR")]
-    Deop { channel: Channel, character: Character },
+    Deop {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "CSO")]
-    SetOwner { channel: Channel, character: Character },
+    SetOwner {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "CTU")]
-    Timeout { channel: Channel, character: Character },
+    Timeout {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "CUB")]
-    Pardon { channel: Channel, character: Character },
+    Pardon {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "FKS")]
     Search {
         kinks: Vec<u32>,
@@ -91,7 +115,10 @@ pub enum ClientCommand {
     #[serde(rename = "PIN")]
     Pong,
     #[serde(rename = "PRI")]
-    PrivateMessage { recipient: Character, message: String },
+    PrivateMessage {
+        recipient: Character,
+        message: String,
+    },
     #[serde(rename = "PRO")]
     ProfileTags { character: Character }, // Advised to use JSON endpoint
     #[serde(rename = "RLL")]
@@ -167,7 +194,10 @@ pub enum ServerCommand {
         character: Character,
     },
     #[serde(rename = "COA")]
-    Opped { character: Character, channel: Channel },
+    Opped {
+        character: Character,
+        channel: Channel,
+    },
     #[serde(rename = "COL")]
     Ops {
         channel: Channel,
@@ -176,9 +206,15 @@ pub enum ServerCommand {
     #[serde(rename = "CON")]
     Connected { count: u32 },
     #[serde(rename = "COR")]
-    Deopped { character: Character, channel: Channel },
+    Deopped {
+        character: Character,
+        channel: Channel,
+    },
     #[serde(rename = "CSO")]
-    SetOwner { character: Character, channel: Channel },
+    SetOwner {
+        character: Character,
+        channel: Channel,
+    },
     #[serde(rename = "CTU")]
     Timeout {
         channel: Channel,
@@ -222,7 +258,10 @@ pub enum ServerCommand {
         value: Vec<u32>,
     },
     #[serde(rename = "LCH")]
-    LeftChannel { channel: Channel, character: Character },
+    LeftChannel {
+        channel: Channel,
+        character: Character,
+    },
     #[serde(rename = "LIS")]
     ListOnline { characters: Vec<CharacterData> },
     #[serde(rename = "NLN")]
@@ -257,7 +296,10 @@ pub enum ServerCommand {
         value: String,
     },
     #[serde(rename = "PRI")]
-    PrivateMessage { character: Character, message: String },
+    PrivateMessage {
+        character: Character,
+        message: String,
+    },
     #[serde(rename = "MSG")]
     Message {
         character: Character,
@@ -330,34 +372,39 @@ pub enum ServerCommand {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="PascalCase")]
+#[serde(rename_all = "PascalCase")]
 pub enum Gender {
     Male,
     Female,
     Transgender,
     Herm,
     Shemale,
-    #[serde(rename="Male-Herm")] MaleHerm,
-    #[serde(rename="Cunt-Boy")] CBoy, // Look, I don't make the rules.
+    #[serde(rename = "Male-Herm")]
+    MaleHerm,
+    #[serde(rename = "Cunt-Boy")]
+    CBoy, // Look, I don't make the rules.
     None,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="PascalCase")]
+#[serde(rename_all = "PascalCase")]
 pub enum Orientation {
     Straight,
     Gay,
     Bisexual,
     Asexual,
     Unsure,
-    #[serde(rename="Bi - male preference")] BiMalePref,
-    #[serde(rename="Bi - female preference")] BiFemalePref,
+    #[serde(rename = "Bi - male preference")]
+    BiMalePref,
+    #[serde(rename = "Bi - female preference")]
+    BiFemalePref,
     Pansexual,
-    #[serde(rename="Bi-curious")] Bicurious,
+    #[serde(rename = "Bi-curious")]
+    Bicurious,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="PascalCase")]
+#[serde(rename_all = "PascalCase")]
 pub enum Language {
     Dutch,
     English,
@@ -377,32 +424,41 @@ pub enum Language {
 
 #[derive(Serialize, Deserialize)]
 pub enum FurryPreference {
-    #[serde(rename="No furry characters, just humans")] HumanOnly,
-    #[serde(rename="Furries ok, Humans Preferred")] HumanPref,
-    #[serde(rename="Furs and / or humans")] Both,
-    #[serde(rename="Humans ok, Furries Preferred")] FurryPref,
-    #[serde(rename="No humans, just furry characters")] FurryOnly,
+    #[serde(rename = "No furry characters, just humans")]
+    HumanOnly,
+    #[serde(rename = "Furries ok, Humans Preferred")]
+    HumanPref,
+    #[serde(rename = "Furs and / or humans")]
+    Both,
+    #[serde(rename = "Humans ok, Furries Preferred")]
+    FurryPref,
+    #[serde(rename = "No humans, just furry characters")]
+    FurryOnly,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="PascalCase")]
+#[serde(rename_all = "PascalCase")]
 pub enum Role {
-    #[serde(rename="Always dominant")] AlwaysDom,
-    #[serde(rename="Usually dominant")] UsuallyDom,
+    #[serde(rename = "Always dominant")]
+    AlwaysDom,
+    #[serde(rename = "Usually dominant")]
+    UsuallyDom,
     Switch,
-    #[serde(rename="Usually submissive")] UsuallySub,
-    #[serde(rename="Always submissive")] AlwaysSub,
+    #[serde(rename = "Usually submissive")]
+    UsuallySub,
+    #[serde(rename = "Always submissive")]
+    AlwaysSub,
     None,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum IdentifyMethod {
     Ticket,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum IgnoreAction {
     Add,
     Delete,
@@ -412,28 +468,30 @@ pub enum IgnoreAction {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum ChannelMode {
-    #[serde(rename="chat")] ChatOnly,
-    #[serde(rename="ads")] AdsOnly,
+    #[serde(rename = "chat")]
+    ChatOnly,
+    #[serde(rename = "ads")]
+    AdsOnly,
     Both,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum ChannelStatus {
     Public,
     Private,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum ReportAction {
     Report,
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum Status {
     Online,
     Looking,
@@ -445,7 +503,7 @@ pub enum Status {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum TypingStatus {
     Clear,
     Paused,
@@ -458,7 +516,7 @@ pub struct CharacterIdentity {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum KinkResponsePart {
     Start,
     Custom,
@@ -476,7 +534,7 @@ pub struct ChannelInfo {
 }
 
 #[derive(Serialize, Deserialize)]
-#[serde(rename_all="lowercase")]
+#[serde(rename_all = "lowercase")]
 pub enum ProfileDataPart {
     Start,
     End,
@@ -485,5 +543,7 @@ pub enum ProfileDataPart {
 }
 
 // Strong typing for string IDs
-#[derive(Serialize, Deserialize, Default, Clone)] pub struct Channel(String);
-#[derive(Serialize, Deserialize, Default, Clone)] pub struct Character(String);
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct Channel(String);
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct Character(String);
