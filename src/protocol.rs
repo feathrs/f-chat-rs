@@ -1,7 +1,7 @@
 use crate::data::*;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::Visitor};
 use serde_json::{from_str, from_value, to_value, to_writer, Value};
-use std::io::Write as _;
+use std::{io::Write as _, str::FromStr};
 
 // For full ser/de of commands
 // ClientCommand can be serialized,
@@ -114,7 +114,7 @@ pub enum ClientCommand {
     },
     #[serde(rename = "FKS")]
     Search {
-        kinks: Vec<u32>,
+        kinks: Vec<KinkId>,
         genders: Vec<Gender>,
         orientations: Vec<Orientation>,
         languages: Vec<Language>,
@@ -268,7 +268,7 @@ pub enum ServerCommand {
     #[serde(rename = "FKS")]
     Search {
         characters: Vec<Character>,
-        kinks: Vec<u32>,
+        kinks: Vec<KinkId>,
     },
     #[serde(rename = "FLN")]
     Offline { character: Character },
@@ -462,4 +462,30 @@ pub enum IgnoreAction {
     Notify,
     List,
     Init,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
+#[serde(into="KinkIdExpanded")]
+#[serde(try_from="KinkIdExpanded")]
+pub struct KinkId(pub u32);
+impl Into<KinkIdExpanded> for KinkId {
+    fn into(self) -> KinkIdExpanded {
+        KinkIdExpanded::String(self.0.to_string())
+    }
+}
+impl TryFrom<KinkIdExpanded> for KinkId {
+    type Error = <u32 as FromStr>::Err;
+    fn try_from(other: KinkIdExpanded) -> Result<KinkId, Self::Error> {
+        match other {
+            KinkIdExpanded::String(val) => val.parse().map(|v| KinkId(v)),
+            KinkIdExpanded::Number(val) => Ok(KinkId(val))
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[serde(untagged)]
+enum KinkIdExpanded {
+    String(String),
+    Number(u32)
 }
