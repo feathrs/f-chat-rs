@@ -120,5 +120,7 @@ pub enum TypingStatus {
 // Strong typing for string IDs
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, Debug)]
 pub struct Channel(pub String);
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Character(pub String);
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct CharacterId(u64);
