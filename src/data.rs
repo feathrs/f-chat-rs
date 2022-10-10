@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use crate::stringable;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "PascalCase")]
@@ -117,10 +118,19 @@ pub enum TypingStatus {
     Typing,
 }
 
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum KinkInterest {
+    Fave,
+    Yes,
+    Maybe,
+    No
+}
+
 // Strong typing for string IDs
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, Debug)]
 pub struct Channel(pub String);
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, Debug, Hash)]
 pub struct Character(pub String);
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, Hash, PartialEq, Eq)]
-pub struct CharacterId(u64);
+
+stringable!(CharacterId: u64, CharacterIdProxy, "CharacterIdProxy");
