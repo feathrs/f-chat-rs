@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize};
-use crate::{util::StringBool, data::{Character, CharacterId}};
+use crate::{util::{StringBool, StringInteger}, data::{Character, CharacterId}};
 use reqwest::Client;
 
 #[derive(Serialize)]
@@ -15,7 +15,7 @@ struct ApiTicketRequest<'a,'b> {
 }
 
 #[derive(Deserialize)]
-struct ApiTicketResponse {
+pub struct ApiTicketResponse {
     bookmarks: Vec<Bookmark>,
     characters: HashMap<Character, CharacterId>,
     default_character: CharacterId,
@@ -51,3 +51,70 @@ pub async fn get_api_ticket(client: &Client, username: &str, password: &str, ext
         .json()
         .await
 } 
+
+#[derive(Deserialize)]
+pub struct MappingListResponse {
+    kinks: Vec<Kink>,
+    kink_groups: Vec<KinkGroup>,
+    infotags: Vec<InfoTag>,
+    infotags_groups: Vec<InfoTagGroup>,
+    listitems: Vec<ListItem>
+}
+
+#[derive(Deserialize)]
+pub struct Kink {
+    description: String,
+    group_id: StringInteger,
+    id: StringInteger,
+    name: String
+}
+
+#[derive(Deserialize)]
+pub struct KinkGroup {
+    id: StringInteger,
+    name: String
+}
+
+#[derive(Deserialize)]
+pub struct InfoTag {
+    group_id: StringInteger,
+    id: StringInteger,
+    list: String,
+    name: String,
+    #[serde(rename="type")]
+    tag_type: InfoTagType
+}
+
+#[derive(Deserialize)]
+pub enum InfoTagType {
+    #[serde(rename="text")]
+    Text,
+    #[serde(rename="number")]
+    Number,
+    #[serde(rename="list")]
+    List
+}
+
+#[derive(Deserialize)]
+pub struct InfoTagGroup {
+    id: StringInteger,
+    name: String
+}
+
+#[derive(Deserialize)]
+pub struct ListItem {
+    id: StringInteger,
+    name: String,
+    value: String
+}
+
+pub async fn get_mapping_list(client: &Client, auth: &str) -> reqwest::Result<MappingListResponse> {
+    let empty_data: HashMap<String, String> = HashMap::new(); // Forgive me, for I am sin.
+    client.post("https://www.f-list.net/json/api/mapping-list.php")
+        .form(&empty_data)
+        .send()
+        .await?
+        .json()
+        .await
+}
+
