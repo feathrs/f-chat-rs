@@ -126,9 +126,9 @@ pub struct HasError<T> {
 }
 
 #[derive(Serialize)]
-struct Authenticated<T> {
-    account: String,
-    ticket: String,
+struct Authenticated<'a,'b,T> {
+    account: &'a str,
+    ticket: &'b str,
     #[serde(flatten)]
     inner: T
 }
@@ -230,7 +230,7 @@ pub async fn req_base<T: Serialize, R: DeserializeOwned>(url: &str, client: &Cli
         .await
 }
 
-pub async fn get_character_base<T: Into<CharacterRequest>, R: DeserializeOwned>(url: &str, client: &Client, ticket: String, account: String, character: T) -> HasResult<R> {
+pub async fn get_character_base<T: Into<CharacterRequest>, R: DeserializeOwned>(url: &str, client: &Client, ticket: &str, account: &str, character: T) -> HasResult<R> {
     let data = Authenticated {
         account, ticket,
         inner: character.into()
@@ -240,7 +240,7 @@ pub async fn get_character_base<T: Into<CharacterRequest>, R: DeserializeOwned>(
 
 macro_rules! character_fn {
     ($url:literal, $i:ident : $t:ty) => {
-        pub async fn $i<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> HasResult<$t> {
+        pub async fn $i<T: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, character: T) -> HasResult<$t> {
             get_character_base(concat!("https://www.f-list.net", $url), client, ticket, account, character).await
         }
     };
@@ -284,7 +284,7 @@ pub struct CharacterMemoResponse {
     note: String
 }
 
-pub async fn get_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> HasResult<CharacterMemoResponse> {
+pub async fn get_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, character: T) -> HasResult<CharacterMemoResponse> {
     let data: Authenticated<MemoCharacterRequest> = Authenticated {
         account, ticket,
         inner: character.into().into()
@@ -293,10 +293,10 @@ pub async fn get_character_memo<T: Into<CharacterRequest>>(client: &Client, tick
 }
 
 #[derive(Serialize)]
-struct SaveCharacterMemoRequest {
+struct SaveCharacterMemoRequest<'a> {
     #[serde(flatten)]
     character: MemoCharacterRequest,
-    note: String
+    note: &'a str
 }
 
 #[derive(Deserialize)]
@@ -304,7 +304,7 @@ pub struct SaveCharacterMemoResponse {
     note: String
 }
 
-pub async fn set_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T, memo: String) -> HasResult<SaveCharacterMemoResponse> {
+pub async fn set_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, character: T, memo: &str) -> HasResult<SaveCharacterMemoResponse> {
     let data: Authenticated<SaveCharacterMemoRequest> = Authenticated {
         account, ticket, 
         inner: SaveCharacterMemoRequest { 
@@ -342,7 +342,7 @@ pub struct GuestbookPost {
     reply: Option<String>
 }
 
-pub async fn get_character_guestbook<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T, page: u64) -> HasResult<CharacterGuestbookResponse> {
+pub async fn get_character_guestbook<T: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, character: T, page: u64) -> HasResult<CharacterGuestbookResponse> {
     let data = Authenticated {
         account, ticket,
         inner: CharacterGuestbookRequest {
@@ -390,7 +390,7 @@ pub struct FriendRequest {
     source: Character
 }
 
-pub async fn get_friends_list(client: &Client, ticket: String, account: String) -> HasResult<FriendListResponse> {
+pub async fn get_friends_list(client: &Client, ticket: &str, account: &str) -> HasResult<FriendListResponse> {
     let data = Authenticated {
         account, ticket,
         inner: FriendListRequest {
@@ -449,7 +449,7 @@ impl From<CharacterRequest> for DestRequest {
     }
 }
 
-pub async fn remove_friend<T1: Into<CharacterRequest>, T2: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, source: T1, dest: T2) -> HasResult<EmptyResponse> {
+pub async fn remove_friend<T1: Into<CharacterRequest>, T2: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, source: T1, dest: T2) -> HasResult<EmptyResponse> {
     let data = Authenticated {
         account, ticket,
         inner: RemoveFriendRequest {
@@ -465,7 +465,7 @@ struct FriendRequestId {
     request_id: u64
 }
 
-pub async fn accept_friend_request(client: &Client, ticket: String, account: String, request: u64) -> HasResult<EmptyResponse> {
+pub async fn accept_friend_request(client: &Client, ticket: &str, account: &str, request: u64) -> HasResult<EmptyResponse> {
     let data = Authenticated {
         account, ticket,
         inner: FriendRequestId {
@@ -475,7 +475,7 @@ pub async fn accept_friend_request(client: &Client, ticket: String, account: Str
     req_base(concat!("https://www.f-list.net", "/json/api/request-accept.php"), client, data).await
 }
 
-pub async fn deny_friend_request(client: &Client, ticket: String, account: String, request: u64) -> HasResult<EmptyResponse> {
+pub async fn deny_friend_request(client: &Client, ticket: &str, account: &str, request: u64) -> HasResult<EmptyResponse> {
     let data = Authenticated {
         account, ticket,
         inner: FriendRequestId {
@@ -485,7 +485,7 @@ pub async fn deny_friend_request(client: &Client, ticket: String, account: Strin
     req_base(concat!("https://www.f-list.net", "/json/api/request-deny.php"), client, data).await
 }
 
-pub async fn cancel_friend_request(client: &Client, ticket: String, account: String, request: u64) -> HasResult<EmptyResponse> {
+pub async fn cancel_friend_request(client: &Client, ticket: &str, account: &str, request: u64) -> HasResult<EmptyResponse> {
     let data = Authenticated {
         account, ticket,
         inner: FriendRequestId {
@@ -530,7 +530,7 @@ impl From<CharacterRequest> for TargetRequest {
     }
 }
 
-pub async fn send_friend_request<T1: Into<CharacterRequest>, T2: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, source: T1, target: T2) -> HasResult<FriendRequestResponse> {
+pub async fn send_friend_request<T1: Into<CharacterRequest>, T2: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, source: T1, target: T2) -> HasResult<FriendRequestResponse> {
     let data = Authenticated {
         account, ticket,
         inner: FriendRequestRequest {
@@ -542,13 +542,13 @@ pub async fn send_friend_request<T1: Into<CharacterRequest>, T2: Into<CharacterR
 }
 
 #[derive(Serialize)]
-struct ReportRequest {
+struct ReportRequest<'a,'b> {
     character: Character,
     #[serde(flatten)]
     target: ReportTarget,
     #[serde(rename="")]
-    report_text: String,
-    log: String,
+    report_text: &'a str,
+    log: &'b str,
     text: StringBool // Must be "true". Always. 
 }
 
@@ -576,7 +576,7 @@ pub struct ReportResponse {
     log_id: StringInteger
 }
 
-pub async fn report<T: Into<ReportTarget>>(client: &Client, ticket: String, account: String, from: Character, target: T, reason: String, log: String) -> HasResult<ReportResponse> {
+pub async fn report<T: Into<ReportTarget>>(client: &Client, ticket: &str, account: &str, from: Character, target: T, reason: &str, log: &str) -> HasResult<ReportResponse> {
     let data = Authenticated {
         account, ticket,
         inner: ReportRequest {
