@@ -44,3 +44,22 @@ fn test_kink_serde() {
     assert_eq!(KinkId(621), from_str::<KinkId>(r#""621""#).expect("Failed to deserialize from string"));
     assert_eq!(KinkId(621), from_str::<KinkId>("621").expect("Failed to deserialize from number"));
 }
+
+#[test]
+fn test_string_bool() {
+    use crate::util::StringBool;
+    use serde_json::{to_string, from_str};
+    assert_eq!(r#""true""#, to_string(&StringBool(true)).expect("Failed to serialize 'true'"));
+    assert_eq!(r#""false""#, to_string(&StringBool(false)).expect("Failed to serialize 'false'"));
+    assert_eq!(StringBool(true), from_str::<StringBool>("true").expect("Failed to deserialize from bool"));
+    assert_eq!(StringBool(true), from_str::<StringBool>(r#""true""#).expect("Failed to deserialize from string"));
+}
+
+#[test]
+fn test_string_integer() {
+    use crate::util::StringInteger;
+    use serde_json::{to_string, from_str};
+    assert_eq!(r#""621""#, to_string(&StringInteger(621)).expect("Failed to serialize '621'"));
+    assert_eq!(StringInteger(621), from_str::<StringInteger>("621").expect("Failed to deserialize from number"));
+    assert_eq!(StringInteger(621), from_str::<StringInteger>(r#""621""#).expect("Failed to deserialize from string"));
+}
