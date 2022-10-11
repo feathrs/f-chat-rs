@@ -11,11 +11,19 @@ use bimap::BiBTreeMap;
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
+use tokio::net::TcpStream;
+use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::Message};
+use futures_util::{SinkExt, StreamExt};
 
-use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character}};
+use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character}, protocol::*};
+
+type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 #[derive(Debug)]
 pub struct Client {
+    client_name: String,
+    client_version: String,
+
     username: String,
     password: String,
     ticket: String,
@@ -25,19 +33,31 @@ pub struct Client {
 
     characters: BiBTreeMap<Character, CharacterId>,
     bookmarks: Vec<Bookmark>,
-    friends: Vec<Friend>
+    friends: Vec<Friend>,
+
+    sessions: Vec<Session>
+}
+
+#[derive(Debug)]
+pub struct Session {
+    socket: Socket
 }
 
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error("Error from HTTP Request")]
-    RequestError(#[from] reqwest::Error)
+    RequestError(#[from] reqwest::Error),
+    #[error("Error from Websocket (Tungstenite)")]
+    WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
 }
 
-impl Client {
+impl Client{
     pub fn new(username: String, password: String) -> Client {
         let http = ReqwestClient::new();
         Client {
+            client_name: "CLIENT_NAME_REPLACE_ME_OR_DIE (feathrs/f-chat-rs)".to_string(),
+            client_version: "1".to_string(),
+
             username, password, 
             ticket: "NONE".to_owned(),
             last_ticket: Instant::now() - Duration::from_secs(60*60), // Pretend that the last ticket was an hour ago.
@@ -46,7 +66,9 @@ impl Client {
 
             characters: BiBTreeMap::new(),
             bookmarks: Vec::new(),
-            friends: Vec::new()
+            friends: Vec::new(),
+
+            sessions: Vec::new()
         }
     }
 
@@ -67,6 +89,34 @@ impl Client {
         let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, false).await?;
         self.ticket = ticket.ticket;
         self.last_ticket = Instant::now();
+        Ok(())
+    }
+
+    pub async fn refresh_fast(&mut self) -> Result<(), ClientError> {
+        // Optimistically refresh if the token is more than 20 minutes old
+        // Supposedly it lasts 30 minutes but I don't trust these devs and their crap API
+        if self.last_ticket + Duration::from_secs(20*60) < Instant::now() { return Ok(()) }
+        self.refresh().await
+    }
+
+    pub async fn connect(&mut self, character: Character) -> Result<(), ClientError> {
+        self.refresh_fast().await?;
+        let (mut socket, _) = connect_async("wss://chat.f-list.net/chat2").await?;
+        
+        socket.send(Message::Text(prepare_command(&ClientCommand::Identify { 
+            method: IdentifyMethod::Ticket, 
+            account: self.username.clone(), 
+            ticket: self.ticket.clone(), 
+            character, 
+            client_name: self.client_name.clone(), 
+            client_version: self.client_version.clone() 
+        }))).await?;
+
+        let session = Session {
+            socket
+        };
+        self.sessions.push(session);
+
         Ok(())
     }
 }
