@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
-use crate::{util::{StringBool, StringInteger}, data::{Character, CharacterId, KinkInterest}};
+use crate::{util::{StringBool, StringInteger}, data::{Character, CharacterId, KinkInterest, Channel}, client};
 use reqwest::Client;
 
 #[derive(Serialize)]
@@ -119,6 +119,7 @@ pub async fn get_mapping_list(client: &Client) -> reqwest::Result<MappingListRes
 
 #[derive(Deserialize)]
 pub struct HasError<T> {
+    #[serde(default)]
     error: String,
     #[serde(flatten)]
     inner: T
@@ -219,17 +220,22 @@ pub struct Settings {
 }
 
 type HasResult<T> = reqwest::Result<HasError<T>>;
-pub async fn get_character_base<T: Into<CharacterRequest>, R: DeserializeOwned>(url: &str, client: &Client, ticket: String, account: String, character: T) -> HasResult<R> {
-    let data = Authenticated {
-        account, ticket,
-        inner: character.into()
-    };
+
+pub async fn req_base<T: Serialize, R: DeserializeOwned>(url: &str, client: &Client, data: T) -> HasResult<R> {
     client.post(url)
         .form(&data)
         .send()
         .await?
         .json()
         .await
+}
+
+pub async fn get_character_base<T: Into<CharacterRequest>, R: DeserializeOwned>(url: &str, client: &Client, ticket: String, account: String, character: T) -> HasResult<R> {
+    let data = Authenticated {
+        account, ticket,
+        inner: character.into()
+    };
+    req_base(url, client, data).await
 }
 
 macro_rules! character_fn {
@@ -255,3 +261,331 @@ pub struct CharacterImagesResponse {
 }
 
 character_fn!("/json/api/character-images.php", get_character_images : CharacterImagesResponse);
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum MemoCharacterRequest { // I hate these people.
+    Target { target: Character },
+    TargetId { target_id: CharacterId }
+}
+
+impl From<CharacterRequest> for MemoCharacterRequest {
+    fn from(req: CharacterRequest) -> Self {
+        match req {
+            CharacterRequest::Id { id } => Self::TargetId { target_id: id },
+            CharacterRequest::Name { name } => Self::Target { target: name }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CharacterMemoResponse {
+    id: u64,
+    note: String
+}
+
+pub async fn get_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> HasResult<CharacterMemoResponse> {
+    let data: Authenticated<MemoCharacterRequest> = Authenticated {
+        account, ticket,
+        inner: character.into().into()
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/character-memo-get2.php"), client, data).await
+}
+
+#[derive(Serialize)]
+struct SaveCharacterMemoRequest {
+    #[serde(flatten)]
+    character: MemoCharacterRequest,
+    note: String
+}
+
+#[derive(Deserialize)]
+pub struct SaveCharacterMemoResponse {
+    note: String
+}
+
+pub async fn set_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T, memo: String) -> HasResult<SaveCharacterMemoResponse> {
+    let data: Authenticated<SaveCharacterMemoRequest> = Authenticated {
+        account, ticket, 
+        inner: SaveCharacterMemoRequest { 
+            character: character.into().into(),
+            note: memo
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/character-memo-save.php"), client, data).await
+}
+
+#[derive(Serialize)]
+struct CharacterGuestbookRequest {
+    #[serde(flatten)]
+    character: CharacterRequest,
+    page: u64
+}
+
+#[derive(Deserialize)]
+pub struct CharacterGuestbookResponse {
+    page: u64, 
+    canEdit: bool,
+    nextPage: bool,
+    posts: Vec<GuestbookPost>
+}
+
+#[derive(Deserialize)]
+pub struct GuestbookPost {
+    approved: bool,
+    canEdit: bool,
+    character: FullCharacter,
+    id: u64,
+    message: String,
+    postedAt: u64,
+    private: bool,
+    reply: Option<String>
+}
+
+pub async fn get_character_guestbook<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T, page: u64) -> HasResult<CharacterGuestbookResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: CharacterGuestbookRequest {
+            page, character: character.into().into()
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/character-guestbook.php"), client, data).await
+}
+
+#[derive(Serialize)]
+struct FriendListRequest {
+    #[serde(rename = "bookmarklist")]
+    bookmarks: StringBool,
+    #[serde(rename = "friendlist")]
+    friends: StringBool,
+    #[serde(rename = "requestlist")]
+    pending_incoming: StringBool,
+    #[serde(rename = "requestpending")]
+    pending_outgoing: StringBool,
+}
+
+#[derive(Deserialize)]
+pub struct FriendListResponse {
+    #[serde(rename = "bookmarklist")]
+    bookmarks: Vec<Character>,
+    #[serde(rename = "friendlist")]
+    friends: Vec<Friend>,
+    #[serde(rename = "requestlist")]
+    pending_incoming: Vec<FriendRequest>,
+    #[serde(rename = "requestpending")]
+    pending_outgoing: Vec<FriendRequest>,
+}
+
+#[derive(Deserialize)]
+pub struct Friend {
+    dest: Character,
+    last_online: u64, // Seconds since last online -- Not timestamp of last online?
+    source: Character
+}
+
+#[derive(Deserialize)]
+pub struct FriendRequest {
+    dest: Character,
+    id: u64,
+    source: Character
+}
+
+pub async fn get_friends_list(client: &Client, ticket: String, account: String) -> HasResult<FriendListResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: FriendListRequest {
+            bookmarks: StringBool(true),
+            friends: StringBool(true),
+            pending_incoming: StringBool(true),
+            pending_outgoing: StringBool(true)
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/friend-bookmark-lists.php"), client, data).await
+}
+
+#[derive(Deserialize)]
+pub struct EmptyResponse {}
+
+character_fn!("/json/api/bookmark-add.php", add_bookmark: EmptyResponse);
+character_fn!("/json/api/bookmark-remove.php", remove_bookmark: EmptyResponse);
+
+#[derive(Serialize)]
+struct RemoveFriendRequest { // Nice.
+    #[serde(flatten)]
+    source: SourceRequest,
+    #[serde(flatten)]
+    dest: DestRequest
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum SourceRequest {
+    Character { source_name: Character },
+    CharacterId { source_id: CharacterId }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum DestRequest {
+    Character { dest_name: Character },
+    CharacterId { dest_id: CharacterId }
+}
+
+impl From<CharacterRequest> for SourceRequest {
+    fn from(req: CharacterRequest) -> Self {
+        match req {
+            CharacterRequest::Name { name } => SourceRequest::Character { source_name: name },
+            CharacterRequest::Id { id } => SourceRequest::CharacterId { source_id: id },
+        }
+    }
+}
+
+impl From<CharacterRequest> for DestRequest {
+    fn from(req: CharacterRequest) -> Self {
+        match req {
+            CharacterRequest::Name { name } => DestRequest::Character { dest_name: name },
+            CharacterRequest::Id { id } => DestRequest::CharacterId { dest_id: id },
+        }
+    }
+}
+
+pub async fn remove_friend<T1: Into<CharacterRequest>, T2: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, source: T1, dest: T2) -> HasResult<EmptyResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: RemoveFriendRequest {
+            source: source.into().into(),
+            dest: dest.into().into()
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/friend-remove.php"), client, data).await
+}
+
+#[derive(Serialize)]
+struct FriendRequestId {
+    request_id: u64
+}
+
+pub async fn accept_friend_request(client: &Client, ticket: String, account: String, request: u64) -> HasResult<EmptyResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: FriendRequestId {
+            request_id: request
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/request-accept.php"), client, data).await
+}
+
+pub async fn deny_friend_request(client: &Client, ticket: String, account: String, request: u64) -> HasResult<EmptyResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: FriendRequestId {
+            request_id: request
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/request-deny.php"), client, data).await
+}
+
+pub async fn cancel_friend_request(client: &Client, ticket: String, account: String, request: u64) -> HasResult<EmptyResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: FriendRequestId {
+            request_id: request
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/request-cancel.php"), client, data).await
+}
+
+#[derive(Serialize)]
+struct FriendRequestRequest {
+    source: SourceRequest,
+    target: TargetRequest
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum TargetRequest { // I'm going to kill people. This is a threat.
+    Character { target_name: Character },
+    CharacterId { target_id: CharacterId }
+}
+
+#[derive(Deserialize)]
+struct FriendRequestResponse {
+    request: FriendRequestPartial
+}
+
+#[derive(Deserialize)]
+struct FriendRequestPartial {
+    id: u64,
+    source: FullCharacter,
+    target: FullCharacter,
+    createdAt: u64
+}
+
+impl From<CharacterRequest> for TargetRequest {
+    fn from(req: CharacterRequest) -> Self {
+        match req {
+            CharacterRequest::Name { name } => TargetRequest::Character { target_name: name },
+            CharacterRequest::Id { id } => TargetRequest::CharacterId { target_id: id },
+        }
+    }
+}
+
+pub async fn send_friend_request<T1: Into<CharacterRequest>, T2: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, source: T1, target: T2) -> HasResult<FriendRequestResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: FriendRequestRequest {
+            source: source.into().into(),
+            target: target.into().into()
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/request-send2.php"), client, data).await
+}
+
+#[derive(Serialize)]
+struct ReportRequest {
+    character: Character,
+    #[serde(flatten)]
+    target: ReportTarget,
+    #[serde(rename="")]
+    report_text: String,
+    log: String,
+    text: StringBool // Must be "true". Always. 
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum ReportTarget {
+    Character { #[serde(rename="reportUser")] character: Character },
+    Channel { channel: Channel }
+}
+
+impl From<Channel> for ReportTarget {
+    fn from(chan: Channel) -> Self {
+        Self::Channel { channel: chan }
+    }
+}
+
+impl From<Character> for ReportTarget {
+    fn from(character: Character) -> Self {
+        Self::Character { character }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct ReportResponse {
+    log_id: StringInteger
+}
+
+pub async fn report<T: Into<ReportTarget>>(client: &Client, ticket: String, account: String, from: Character, target: T, reason: String, log: String) -> HasResult<ReportResponse> {
+    let data = Authenticated {
+        account, ticket,
+        inner: ReportRequest {
+            character: from,
+            target: target.into(),
+            report_text: reason,
+            log,
+            text: StringBool(true)
+        }
+    };
+    req_base(concat!("https://www.f-list.net", "/json/api/report-submit.php"), client, data).await
+}
