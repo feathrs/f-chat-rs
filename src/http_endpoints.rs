@@ -134,9 +134,21 @@ struct Authenticated<T> {
 
 #[derive(Serialize)]
 #[serde(untagged)]
-enum CharacterProfileRequest {
+pub enum CharacterRequest {
     Name {name: Character},
     Id {id: CharacterId}
+}
+
+impl From<Character> for CharacterRequest {
+    fn from(name: Character) -> Self {
+        CharacterRequest::Name { name }
+    }
+}
+
+impl From<CharacterId> for CharacterRequest {
+    fn from(id: CharacterId) -> Self {
+        CharacterRequest::Id { id }
+    }
 }
 
 #[derive(Deserialize)]
@@ -204,23 +216,31 @@ pub struct Settings {
     public: bool
 }
 
-pub async fn get_character_id_profile_data(client: &Client, ticket: String, account: String, character_id: CharacterId) -> reqwest::Result<HasError<CharacterProfileResponse>> {
+pub async fn get_character_profile_data<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> reqwest::Result<HasError<CharacterProfileResponse>> {
     let data = Authenticated {
         account, ticket,
-        inner: CharacterProfileRequest::Id { id: character_id }
+        inner: character.into()
     };
-    get_character_data_base(client, data).await
-}
-pub async fn get_character_profile_data(client: &Client, ticket: String, account: String, character: Character) -> reqwest::Result<HasError<CharacterProfileResponse>> {
-    let data = Authenticated {
-        account, ticket,
-        inner: CharacterProfileRequest::Name { name: character }
-    };
-    get_character_data_base(client, data).await
-}
-async fn get_character_data_base(client: &Client, req: Authenticated<CharacterProfileRequest>) -> reqwest::Result<HasError<CharacterProfileResponse>> {
     client.post("https://www.f-list.net/json/api/character-data.php")
-        .form(&req)
+        .form(&data)
+        .send()
+        .await?
+        .json()
+        .await
+}
+
+#[derive(Deserialize)]
+pub struct CharacterFriendsResponse {
+    friends: Vec<FullCharacter>
+}
+
+pub async fn get_character_friends_data<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> reqwest::Result<HasError<CharacterFriendsResponse>> {
+    let data = Authenticated {
+        account, ticket,
+        inner: character.into()
+    };
+    client.post("https://www.f-list.net/json/api/character-friends.php")
+        .form(&data)
         .send()
         .await?
         .json()
