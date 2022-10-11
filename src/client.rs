@@ -51,12 +51,12 @@ pub enum ClientError {
     WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
 }
 
-impl Client{
-    pub fn new(username: String, password: String) -> Client {
+impl Client {
+    pub fn new(username: String, password: String, client_name: String, client_version: String) -> Client {
         let http = ReqwestClient::new();
         Client {
-            client_name: "CLIENT_NAME_REPLACE_ME_OR_DIE (feathrs/f-chat-rs)".to_string(),
-            client_version: "1".to_string(),
+            // Use a builder for this later. Part of a refactoring task.
+            client_name, client_version,
 
             username, password, 
             ticket: "NONE".to_owned(),
