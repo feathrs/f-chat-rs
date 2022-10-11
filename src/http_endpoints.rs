@@ -325,19 +325,23 @@ struct CharacterGuestbookRequest {
 #[derive(Deserialize)]
 pub struct CharacterGuestbookResponse {
     page: u64, 
-    canEdit: bool,
-    nextPage: bool,
+    #[serde(rename="canEdit")]
+    can_edit: bool,
+    #[serde(rename="nextPage")]
+    next_page: bool,
     posts: Vec<GuestbookPost>
 }
 
 #[derive(Deserialize)]
 pub struct GuestbookPost {
     approved: bool,
-    canEdit: bool,
+    #[serde(rename="canEdit")]
+    can_edit: bool,
     character: FullCharacter,
     id: u64,
     message: String,
-    postedAt: u64,
+    #[serde(rename="postedAt")]
+    posted_at: u64,
     private: bool,
     reply: Option<String>
 }
@@ -546,7 +550,7 @@ struct ReportRequest<'a,'b> {
     character: Character,
     #[serde(flatten)]
     target: ReportTarget,
-    #[serde(rename="")]
+    #[serde(rename="reportText")]
     report_text: &'a str,
     log: &'b str,
     text: StringBool // Must be "true". Always. 
