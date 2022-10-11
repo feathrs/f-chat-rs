@@ -16,22 +16,22 @@ struct ApiTicketRequest<'a,'b> {
 
 #[derive(Deserialize)]
 pub struct ApiTicketResponse {
-    bookmarks: Vec<Bookmark>,
-    characters: HashMap<Character, CharacterId>,
-    default_character: CharacterId,
-    friends: Vec<FriendRelation>,
-    ticket: String
+    pub bookmarks: Vec<Bookmark>,
+    pub characters: HashMap<Character, CharacterId>,
+    pub default_character: CharacterId,
+    pub friends: Vec<FriendRelation>,
+    pub ticket: String
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct Bookmark {
-    name: Character
+pub struct Bookmark {
+    pub name: Character
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct FriendRelation {
-    dest_name: Character,
-    source_name: Character
+pub struct FriendRelation {
+    pub dest_name: Character,
+    pub source_name: Character
 }
 
 // Only new-format char list. Includes friends & bookmarks response if extra.
@@ -54,25 +54,25 @@ pub async fn get_api_ticket(client: &Client, username: &str, password: &str, ext
 
 #[derive(Deserialize)]
 pub struct MappingListResponse {
-    kinks: Vec<Kink>,
-    kink_groups: Vec<KinkGroup>,
-    infotags: Vec<InfoTag>,
-    infotags_groups: Vec<InfoTagGroup>,
-    listitems: Vec<ListItem>
+    pub kinks: Vec<Kink>,
+    pub kink_groups: Vec<KinkGroup>,
+    pub infotags: Vec<InfoTag>,
+    pub infotags_groups: Vec<InfoTagGroup>,
+    pub listitems: Vec<ListItem>
 }
 
 #[derive(Deserialize)]
 pub struct IdItem {
-    name: String,
-    id: StringInteger
+    pub name: String,
+    pub id: StringInteger
 }
 
 #[derive(Deserialize)]
 pub struct Kink {
     #[serde(flatten)]
-    id: IdItem,
-    description: String,
-    group_id: StringInteger
+    pub id: IdItem,
+    pub description: String,
+    pub group_id: StringInteger
 }
 
 #[derive(Deserialize)]
@@ -80,12 +80,12 @@ pub struct KinkGroup(IdItem);
 
 #[derive(Deserialize)]
 pub struct InfoTag {
-    group_id: StringInteger,
-    id: StringInteger,
-    list: String,
-    name: String,
+    pub group_id: StringInteger,
+    pub id: StringInteger,
+    pub list: String,
+    pub name: String,
     #[serde(rename="type")]
-    tag_type: InfoTagType
+    pub tag_type: InfoTagType
 }
 
 #[derive(Deserialize)]
@@ -103,8 +103,8 @@ pub struct InfoTagGroup(IdItem);
 
 #[derive(Deserialize)]
 pub struct ListItem {
-    id: IdItem,
-    value: String
+    pub id: IdItem,
+    pub value: String
 }
 
 pub async fn get_mapping_list(client: &Client) -> reqwest::Result<MappingListResponse> {
@@ -120,17 +120,17 @@ pub async fn get_mapping_list(client: &Client) -> reqwest::Result<MappingListRes
 #[derive(Deserialize)]
 pub struct HasError<T> {
     #[serde(default)]
-    error: String,
+    pub error: String,
     #[serde(flatten)]
-    inner: T
+    pub inner: T
 }
 
 #[derive(Serialize)]
 struct Authenticated<'a,'b,T> {
-    account: &'a str,
-    ticket: &'b str,
+    pub account: &'a str,
+    pub ticket: &'b str,
     #[serde(flatten)]
-    inner: T
+    pub inner: T
 }
 
 #[derive(Serialize)]
@@ -154,69 +154,69 @@ impl From<CharacterId> for CharacterRequest {
 
 #[derive(Deserialize)]
 pub struct CharacterProfileResponse {
-    badges: Vec<String>,
-    character_list: Vec<FullCharacter>, // I hate you.
-    created_at: u64,
-    custom_kinks: HashMap<StringInteger, CustomKink>,
-    custom_title: Option<String>,
-    customs_first: bool,
-    description: String,
-    id: u64,
-    images: Vec<Image>,
-    infotags: Vec<String>, // Dead. Dead to me. Killed.
-    inlines: HashMap<StringInteger, Inline>,
-    is_self: bool,
-    kinks: HashMap<StringInteger, KinkInterest>,
-    memo: Memo,
-    name: String,
-    settings: Settings,
-    updated_at: u64,
-    views: u64
+    pub badges: Vec<String>,
+    pub character_list: Vec<FullCharacter>, // I hate you.
+    pub created_at: u64,
+    pub custom_kinks: HashMap<StringInteger, CustomKink>,
+    pub custom_title: Option<String>,
+    pub customs_first: bool,
+    pub description: String,
+    pub id: u64,
+    pub images: Vec<Image>,
+    pub infotags: Vec<String>, // Dead. Dead to me. Killed.
+    pub inlines: HashMap<StringInteger, Inline>,
+    pub is_self: bool,
+    pub kinks: HashMap<StringInteger, KinkInterest>,
+    pub memo: Memo,
+    pub name: String,
+    pub settings: Settings,
+    pub updated_at: u64,
+    pub views: u64
 }
 
 #[derive(Deserialize)]
-pub struct FullCharacter(IdItem);
+pub struct FullCharacter(pub IdItem);
 
 #[derive(Deserialize)]
 pub struct CustomKink {
-    name: String,
-    description: String,
-    choice: KinkInterest,
-    children: Vec<u64>
+    pub name: String,
+    pub description: String,
+    pub choice: KinkInterest,
+    pub children: Vec<u64>
 }
 
 #[derive(Deserialize)]
 pub struct Image {
-    description: String,
-    extension: String,
-    height: String,
+    pub description: String,
+    pub extension: String,
+    pub height: String,
     #[serde(alias="id")] // Some later versions of this structure use id instead
-    image_id: String,
-    sort_order: StringInteger, // Thanks. Clowns.
-    width: String,
-    url: Option<String> // Included in full response but not profile? Supposedly can be constructed manually.
+    pub image_id: String,
+    pub sort_order: StringInteger, // Thanks. Clowns.
+    pub width: String,
+    pub url: Option<String> // Included in full response but not profile? Supposedly can be constructed manually.
 }
 
 #[derive(Deserialize)]
 pub struct Inline {
-    extension: String,
-    hash: String,
-    nsfw: bool
+    pub extension: String,
+    pub hash: String,
+    pub nsfw: bool
 }
 
 #[derive(Deserialize)]
 pub struct Memo {
-    id: u64,
-    memo: String
+    pub id: u64,
+    pub memo: String
 }
 
 #[derive(Deserialize)]
 pub struct Settings {
-    customs_first: bool,
-    show_friends: bool,
-    guestbook: bool,
-    prevent_bookmarks: bool,
-    public: bool
+    pub customs_first: bool,
+    pub show_friends: bool,
+    pub guestbook: bool,
+    pub prevent_bookmarks: bool,
+    pub public: bool
 }
 
 type HasResult<T> = reqwest::Result<HasError<T>>;
@@ -250,14 +250,14 @@ character_fn!("/json/api/character-data.php", get_character_profile_data : Chara
 
 #[derive(Deserialize)]
 pub struct CharacterFriendsResponse {
-    friends: Vec<FullCharacter>
+    pub friends: Vec<FullCharacter>
 }
 
 character_fn!("/json/api/character-friends.php", get_character_friends : CharacterFriendsResponse);
 
 #[derive(Deserialize)]
 pub struct CharacterImagesResponse {
-    images: Vec<Image>
+    pub images: Vec<Image>
 }
 
 character_fn!("/json/api/character-images.php", get_character_images : CharacterImagesResponse);
@@ -280,8 +280,8 @@ impl From<CharacterRequest> for MemoCharacterRequest {
 
 #[derive(Deserialize)]
 pub struct CharacterMemoResponse {
-    id: u64,
-    note: String
+    pub id: u64,
+    pub note: String
 }
 
 pub async fn get_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, character: T) -> HasResult<CharacterMemoResponse> {
@@ -301,7 +301,7 @@ struct SaveCharacterMemoRequest<'a> {
 
 #[derive(Deserialize)]
 pub struct SaveCharacterMemoResponse {
-    note: String
+    pub note: String
 }
 
 pub async fn set_character_memo<T: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, character: T, memo: &str) -> HasResult<SaveCharacterMemoResponse> {
@@ -324,26 +324,26 @@ struct CharacterGuestbookRequest {
 
 #[derive(Deserialize)]
 pub struct CharacterGuestbookResponse {
-    page: u64, 
+    pub page: u64, 
     #[serde(rename="canEdit")]
-    can_edit: bool,
+    pub can_edit: bool,
     #[serde(rename="nextPage")]
-    next_page: bool,
-    posts: Vec<GuestbookPost>
+    pub next_page: bool,
+    pub posts: Vec<GuestbookPost>
 }
 
 #[derive(Deserialize)]
 pub struct GuestbookPost {
-    approved: bool,
+    pub approved: bool,
     #[serde(rename="canEdit")]
-    can_edit: bool,
-    character: FullCharacter,
-    id: u64,
-    message: String,
+    pub can_edit: bool,
+    pub character: FullCharacter,
+    pub id: u64,
+    pub message: String,
     #[serde(rename="postedAt")]
-    posted_at: u64,
-    private: bool,
-    reply: Option<String>
+    pub posted_at: u64,
+    pub private: bool,
+    pub reply: Option<String>
 }
 
 pub async fn get_character_guestbook<T: Into<CharacterRequest>>(client: &Client, ticket: &str, account: &str, character: T, page: u64) -> HasResult<CharacterGuestbookResponse> {
@@ -371,27 +371,27 @@ struct FriendListRequest {
 #[derive(Deserialize)]
 pub struct FriendListResponse {
     #[serde(rename = "bookmarklist")]
-    bookmarks: Vec<Character>,
+    pub bookmarks: Vec<Character>,
     #[serde(rename = "friendlist")]
-    friends: Vec<Friend>,
+    pub friends: Vec<Friend>,
     #[serde(rename = "requestlist")]
-    pending_incoming: Vec<FriendRequest>,
+    pub pending_incoming: Vec<FriendRequest>,
     #[serde(rename = "requestpending")]
-    pending_outgoing: Vec<FriendRequest>,
+    pub pending_outgoing: Vec<FriendRequest>,
 }
 
 #[derive(Deserialize)]
 pub struct Friend {
-    dest: Character,
-    last_online: u64, // Seconds since last online -- Not timestamp of last online?
-    source: Character
+    pub dest: Character,
+    pub last_online: u64, // Seconds since last online -- Not timestamp of last online?
+    pub source: Character
 }
 
 #[derive(Deserialize)]
 pub struct FriendRequest {
-    dest: Character,
-    id: u64,
-    source: Character
+    pub dest: Character,
+    pub id: u64,
+    pub source: Character
 }
 
 pub async fn get_friends_list(client: &Client, ticket: &str, account: &str) -> HasResult<FriendListResponse> {
@@ -513,16 +513,17 @@ enum TargetRequest { // I'm going to kill people. This is a threat.
 }
 
 #[derive(Deserialize)]
-struct FriendRequestResponse {
-    request: FriendRequestPartial
+pub struct FriendRequestResponse {
+    pub request: FriendRequestPartial
 }
 
 #[derive(Deserialize)]
-struct FriendRequestPartial {
-    id: u64,
-    source: FullCharacter,
-    target: FullCharacter,
-    createdAt: u64
+pub struct FriendRequestPartial {
+    pub id: u64,
+    pub source: FullCharacter,
+    pub target: FullCharacter,
+    #[serde(rename="createdAt")]
+    pub created_at: u64
 }
 
 impl From<CharacterRequest> for TargetRequest {
@@ -577,7 +578,7 @@ impl From<Character> for ReportTarget {
 
 #[derive(Deserialize)]
 pub struct ReportResponse {
-    log_id: StringInteger
+    pub log_id: StringInteger
 }
 
 pub async fn report<T: Into<ReportTarget>>(client: &Client, ticket: &str, account: &str, from: Character, target: T, reason: &str, log: &str) -> HasResult<ReportResponse> {
