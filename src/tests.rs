@@ -1,10 +1,4 @@
 #[test]
-fn it_works() {
-    let result = 2 + 2;
-    assert_eq!(result, 4);
-}
-
-#[test]
 fn server_command_deserialize() {
     use crate::protocol::{parse_command, ServerCommand, CharacterData};
     use crate::data::{Character, Gender, Status};
