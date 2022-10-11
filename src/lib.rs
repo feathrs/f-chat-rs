@@ -2,9 +2,10 @@
 
 mod util; // Import first because it has macros
 
-mod data;
-mod protocol;
+pub mod data;
+pub mod protocol;
+pub mod client;
+pub mod http_endpoints;
+
 #[cfg(test)]
 mod tests;
-mod client;
-mod http_endpoints;

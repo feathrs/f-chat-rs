@@ -1,5 +1,5 @@
 use crate::data::*;
-use serde::{Deserialize, Serialize, de::Visitor};
+use serde::{Deserialize, Serialize};
 use serde_json::{from_str, from_value, to_value, to_writer, Value};
 use std::{io::Write as _, str::FromStr};
 

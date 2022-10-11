@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
-use crate::{util::{StringBool, StringInteger}, data::{Character, CharacterId, KinkInterest, Channel}, client};
+use crate::{util::{StringBool, StringInteger}, data::{Character, CharacterId, KinkInterest, Channel}};
 use reqwest::Client;
 
 #[derive(Serialize)]
@@ -14,7 +14,7 @@ struct ApiTicketRequest<'a,'b> {
     new_character_list: StringBool
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct ApiTicketResponse {
     pub bookmarks: Vec<Bookmark>,
     pub characters: HashMap<Character, CharacterId>,
@@ -52,7 +52,7 @@ pub async fn get_api_ticket(client: &Client, username: &str, password: &str, ext
         .await
 } 
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct MappingListResponse {
     pub kinks: Vec<Kink>,
     pub kink_groups: Vec<KinkGroup>,
@@ -61,13 +61,13 @@ pub struct MappingListResponse {
     pub listitems: Vec<ListItem>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct IdItem {
     pub name: String,
     pub id: StringInteger
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Kink {
     #[serde(flatten)]
     pub id: IdItem,
@@ -75,10 +75,10 @@ pub struct Kink {
     pub group_id: StringInteger
 }
 
-#[derive(Deserialize)]
-pub struct KinkGroup(IdItem);
+#[derive(Deserialize, Debug)]
+pub struct KinkGroup(pub IdItem);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct InfoTag {
     pub group_id: StringInteger,
     pub id: StringInteger,
@@ -88,7 +88,7 @@ pub struct InfoTag {
     pub tag_type: InfoTagType
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub enum InfoTagType {
     #[serde(rename="text")]
     Text,
@@ -98,10 +98,10 @@ pub enum InfoTagType {
     List
 }
 
-#[derive(Deserialize)]
-pub struct InfoTagGroup(IdItem);
+#[derive(Deserialize, Debug)]
+pub struct InfoTagGroup(pub IdItem);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct ListItem {
     pub id: IdItem,
     pub value: String
@@ -117,7 +117,7 @@ pub async fn get_mapping_list(client: &Client) -> reqwest::Result<MappingListRes
         .await
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct HasError<T> {
     #[serde(default)]
     pub error: String,
@@ -133,7 +133,7 @@ struct Authenticated<'a,'b,T> {
     pub inner: T
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub enum CharacterRequest {
     Name {name: Character},
@@ -152,7 +152,7 @@ impl From<CharacterId> for CharacterRequest {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CharacterProfileResponse {
     pub badges: Vec<String>,
     pub character_list: Vec<FullCharacter>, // I hate you.
@@ -174,10 +174,10 @@ pub struct CharacterProfileResponse {
     pub views: u64
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct FullCharacter(pub IdItem);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CustomKink {
     pub name: String,
     pub description: String,
@@ -185,7 +185,7 @@ pub struct CustomKink {
     pub children: Vec<u64>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Image {
     pub description: String,
     pub extension: String,
@@ -197,20 +197,20 @@ pub struct Image {
     pub url: Option<String> // Included in full response but not profile? Supposedly can be constructed manually.
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Inline {
     pub extension: String,
     pub hash: String,
     pub nsfw: bool
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Memo {
     pub id: u64,
     pub memo: String
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Settings {
     pub customs_first: bool,
     pub show_friends: bool,
@@ -248,21 +248,21 @@ macro_rules! character_fn {
 
 character_fn!("/json/api/character-data.php", get_character_profile_data : CharacterProfileResponse);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CharacterFriendsResponse {
     pub friends: Vec<FullCharacter>
 }
 
 character_fn!("/json/api/character-friends.php", get_character_friends : CharacterFriendsResponse);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CharacterImagesResponse {
     pub images: Vec<Image>
 }
 
 character_fn!("/json/api/character-images.php", get_character_images : CharacterImagesResponse);
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub enum MemoCharacterRequest { // I hate these people.
     Target { target: Character },
@@ -278,7 +278,7 @@ impl From<CharacterRequest> for MemoCharacterRequest {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CharacterMemoResponse {
     pub id: u64,
     pub note: String
@@ -299,7 +299,7 @@ struct SaveCharacterMemoRequest<'a> {
     note: &'a str
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct SaveCharacterMemoResponse {
     pub note: String
 }
@@ -322,7 +322,7 @@ struct CharacterGuestbookRequest {
     page: u64
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct CharacterGuestbookResponse {
     pub page: u64, 
     #[serde(rename="canEdit")]
@@ -332,7 +332,7 @@ pub struct CharacterGuestbookResponse {
     pub posts: Vec<GuestbookPost>
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct GuestbookPost {
     pub approved: bool,
     #[serde(rename="canEdit")]
@@ -368,7 +368,7 @@ struct FriendListRequest {
     pending_outgoing: StringBool,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct FriendListResponse {
     #[serde(rename = "bookmarklist")]
     pub bookmarks: Vec<Character>,
@@ -380,14 +380,14 @@ pub struct FriendListResponse {
     pub pending_outgoing: Vec<FriendRequest>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct Friend {
     pub dest: Character,
     pub last_online: u64, // Seconds since last online -- Not timestamp of last online?
     pub source: Character
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct FriendRequest {
     pub dest: Character,
     pub id: u64,
@@ -407,7 +407,7 @@ pub async fn get_friends_list(client: &Client, ticket: &str, account: &str) -> H
     req_base(concat!("https://www.f-list.net", "/json/api/friend-bookmark-lists.php"), client, data).await
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct EmptyResponse {}
 
 character_fn!("/json/api/bookmark-add.php", add_bookmark: EmptyResponse);
@@ -512,12 +512,12 @@ enum TargetRequest { // I'm going to kill people. This is a threat.
     CharacterId { target_id: CharacterId }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct FriendRequestResponse {
     pub request: FriendRequestPartial
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct FriendRequestPartial {
     pub id: u64,
     pub source: FullCharacter,
@@ -557,7 +557,7 @@ struct ReportRequest<'a,'b> {
     text: StringBool // Must be "true". Always. 
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(untagged)]
 pub enum ReportTarget {
     Character { #[serde(rename="reportUser")] character: Character },
@@ -576,7 +576,7 @@ impl From<Character> for ReportTarget {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct ReportResponse {
     pub log_id: StringInteger
 }
