@@ -19,19 +19,13 @@ pub struct ApiTicketResponse {
     pub bookmarks: Vec<Bookmark>,
     pub characters: HashMap<Character, CharacterId>,
     pub default_character: CharacterId,
-    pub friends: Vec<FriendRelation>,
+    pub friends: Vec<Friend>,
     pub ticket: String
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Bookmark {
     pub name: Character
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct FriendRelation {
-    pub dest_name: Character,
-    pub source_name: Character
 }
 
 // Only new-format char list. Includes friends & bookmarks response if extra.
@@ -382,8 +376,11 @@ pub struct FriendListResponse {
 
 #[derive(Deserialize, Debug)]
 pub struct Friend {
+    #[serde(alias="dest_name")]
     pub dest: Character,
+    #[serde(default)]
     pub last_online: u64, // Seconds since last online -- Not timestamp of last online?
+    #[serde(alias="source_name")]
     pub source: Character
 }
 

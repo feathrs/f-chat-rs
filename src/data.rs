@@ -128,9 +128,9 @@ pub enum KinkInterest {
 }
 
 // Strong typing for string IDs
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct Channel(pub String);
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Character(pub String);
 
 stringable!(CharacterId: u64, CharacterIdProxy, "CharacterIdProxy");
