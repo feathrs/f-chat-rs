@@ -127,8 +127,10 @@ pub enum ClientCommand {
         account: String,
         ticket: String,
         character: Character,
-        cname: String,
-        cversion: String,
+        #[rename("cname")]
+        client_name: String,
+        #[rename("cversion")]
+        client_version: String,
     }, // method should always be "ticket"
     #[serde(rename = "IGN")]
     IgnoreList {
