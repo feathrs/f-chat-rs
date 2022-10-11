@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use serde::{Serialize, Deserialize};
+use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use crate::{util::{StringBool, StringInteger}, data::{Character, CharacterId, KinkInterest}};
 use reqwest::Client;
 
@@ -189,9 +189,11 @@ pub struct Image {
     description: String,
     extension: String,
     height: String,
+    #[serde(alias="id")] // Some later versions of this structure use id instead
     image_id: String,
     sort_order: StringInteger, // Thanks. Clowns.
-    width: String
+    width: String,
+    url: Option<String> // Included in full response but not profile? Supposedly can be constructed manually.
 }
 
 #[derive(Deserialize)]
@@ -216,33 +218,40 @@ pub struct Settings {
     public: bool
 }
 
-pub async fn get_character_profile_data<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> reqwest::Result<HasError<CharacterProfileResponse>> {
+type HasResult<T> = reqwest::Result<HasError<T>>;
+pub async fn get_character_base<T: Into<CharacterRequest>, R: DeserializeOwned>(url: &str, client: &Client, ticket: String, account: String, character: T) -> HasResult<R> {
     let data = Authenticated {
         account, ticket,
         inner: character.into()
     };
-    client.post("https://www.f-list.net/json/api/character-data.php")
+    client.post(url)
         .form(&data)
         .send()
         .await?
         .json()
         .await
 }
+
+macro_rules! character_fn {
+    ($url:literal, $i:ident : $t:ty) => {
+        pub async fn $i<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> HasResult<$t> {
+            get_character_base(concat!("https://www.f-list.net", $url), client, ticket, account, character).await
+        }
+    };
+}
+
+character_fn!("/json/api/character-data.php", get_character_profile_data : CharacterProfileResponse);
 
 #[derive(Deserialize)]
 pub struct CharacterFriendsResponse {
     friends: Vec<FullCharacter>
 }
 
-pub async fn get_character_friends_data<T: Into<CharacterRequest>>(client: &Client, ticket: String, account: String, character: T) -> reqwest::Result<HasError<CharacterFriendsResponse>> {
-    let data = Authenticated {
-        account, ticket,
-        inner: character.into()
-    };
-    client.post("https://www.f-list.net/json/api/character-friends.php")
-        .form(&data)
-        .send()
-        .await?
-        .json()
-        .await
+character_fn!("/json/api/character-friends.php", get_character_friends : CharacterFriendsResponse);
+
+#[derive(Deserialize)]
+pub struct CharacterImagesResponse {
+    images: Vec<Image>
 }
+
+character_fn!("/json/api/character-images.php", get_character_images : CharacterImagesResponse);
