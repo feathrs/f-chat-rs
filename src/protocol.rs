@@ -127,9 +127,9 @@ pub enum ClientCommand {
         account: String,
         ticket: String,
         character: Character,
-        #[rename("cname")]
+        #[serde(rename="cname")]
         client_name: String,
-        #[rename("cversion")]
+        #[serde(rename="cversion")]
         client_version: String,
     }, // method should always be "ticket"
     #[serde(rename = "IGN")]
