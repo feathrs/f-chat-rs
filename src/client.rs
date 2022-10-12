@@ -6,14 +6,14 @@
 // - Combine WS sessions and HTTP endpoints into one thing
 // - Use a trait implementation for events. Have a generic client.
 
-use std::time::{Instant, Duration};
+use std::{time::{Instant, Duration}, sync::Arc};
 use bimap::BiBTreeMap;
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
-use tokio::net::TcpStream;
+use tokio::{net::TcpStream, sync::mpsc::{Sender, Receiver, channel}};
 use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::Message};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
 use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character}, protocol::*};
 
@@ -35,12 +35,14 @@ pub struct Client {
     bookmarks: Vec<Bookmark>,
     friends: Vec<Friend>,
 
-    sessions: Vec<Session>
+    sessions: Vec<Arc<Session>>,
+    dispatch_channel: (Sender<ServerCommand>, Receiver<ServerCommand>)
 }
 
 #[derive(Debug)]
 pub struct Session {
-    socket: Socket
+    character: Character,
+    write: SplitSink<Socket, Message>
 }
 
 #[derive(Error, Debug)]
@@ -68,7 +70,8 @@ impl Client {
             bookmarks: Vec::new(),
             friends: Vec::new(),
 
-            sessions: Vec::new()
+            sessions: Vec::new(),
+            dispatch_channel: channel(8),
         }
     }
 
@@ -107,16 +110,46 @@ impl Client {
             method: IdentifyMethod::Ticket, 
             account: self.username.clone(), 
             ticket: self.ticket.clone(), 
-            character, 
+            character: character.clone(), 
             client_name: self.client_name.clone(), 
             client_version: self.client_version.clone() 
         }))).await?;
 
-        let session = Session {
-            socket
-        };
-        self.sessions.push(session);
+        let (write, read) = socket.split();
+
+        let session = Arc::new(Session {
+            character,
+            write,
+        });
+        self.sessions.push(session.clone());
+
+        // Oh, and something will need to listen to these...
+        let chan = self.dispatch_channel.0.clone();
+        tokio::spawn(async move {
+            read.for_each(move |res| {
+                // We don't want this to happen concurrently, because the events need to arrive in order
+                // But they only need to arrive in order for any given connection.
+                // Connections will end up interleaved in the channel consumer.
+                let chan = chan.clone();
+                async move {
+                    match res {
+                        Err(err) => {eprintln!("Error when reading from session: {err:?}");},
+                        Ok(ok) => {
+                            match ok.to_text() {
+                                Err(err) => {eprintln!("Message frame is not text: {err:?}");},
+                                Ok(text) => {
+                                    let command = parse_command(text);
+                                    chan.send(command).await.expect("Failed to send command through Tokio mpsc channel");
+                                }
+                            };
+                        }
+                    };
+                }
+            })
+        });
 
         Ok(())
     }
+
+
 }
