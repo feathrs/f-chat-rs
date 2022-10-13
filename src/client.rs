@@ -11,7 +11,7 @@ use bimap::BiBTreeMap;
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
-use tokio::{net::TcpStream, sync::mpsc::{Sender, Receiver, channel}};
+use tokio::{net::TcpStream, sync::mpsc::{Sender, Receiver, channel}, task::JoinHandle};
 use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
@@ -102,7 +102,7 @@ impl Client {
         self.refresh().await
     }
 
-    pub async fn connect(&mut self, character: Character) -> Result<(), ClientError> {
+    pub async fn connect(&mut self, character: Character) -> Result<JoinHandle<()>, ClientError> {
         self.refresh_fast().await?;
         let (mut socket, _) = connect_async("wss://chat.f-list.net/chat2").await?;
         
@@ -125,30 +125,26 @@ impl Client {
 
         // Oh, and something will need to listen to these...
         let chan = self.dispatch_channel.0.clone();
-        tokio::spawn(async move {
-            read.for_each(move |res| {
-                // We don't want this to happen concurrently, because the events need to arrive in order
-                // But they only need to arrive in order for any given connection.
-                // Connections will end up interleaved in the channel consumer.
-                let chan = chan.clone();
-                async move {
-                    match res {
-                        Err(err) => {eprintln!("Error when reading from session: {err:?}");},
-                        Ok(ok) => {
-                            match ok.to_text() {
-                                Err(err) => {eprintln!("Message frame is not text: {err:?}");},
-                                Ok(text) => {
-                                    let command = parse_command(text);
-                                    chan.send(command).await.expect("Failed to send command through Tokio mpsc channel");
-                                }
-                            };
-                        }
-                    };
-                }
-            })
-        });
-
-        Ok(())
+        Ok(tokio::spawn(read.for_each(move |res| {
+            // We don't want this to happen concurrently, because the events need to arrive in order
+            // But they only need to arrive in order for any given connection.
+            // Connections will end up interleaved in the channel consumer.
+            let chan = chan.clone();
+            async move {
+                match res {
+                    Err(err) => {eprintln!("Error when reading from session: {err:?}");},
+                    Ok(ok) => {
+                        match ok.to_text() {
+                            Err(err) => {eprintln!("Message frame is not text: {err:?}");},
+                            Ok(text) => {
+                                let command = parse_command(text);
+                                chan.send(command).await.expect("Failed to send command through Tokio mpsc channel");
+                            }
+                        };
+                    }
+                };
+            }
+        })))
     }
 
 
