@@ -20,7 +20,7 @@ use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{Character
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 #[derive(Debug)]
-pub struct Client {
+pub struct Client<T: EventListener> {
     client_name: String,
     client_version: String,
 
@@ -36,7 +36,9 @@ pub struct Client {
     friends: Vec<Friend>,
 
     sessions: Vec<Arc<Session>>,
-    dispatch_channel: (Sender<ServerCommand>, Receiver<ServerCommand>)
+    dispatch_channel: (Sender<ServerCommand>, Receiver<ServerCommand>),
+
+    event_listener: T
 }
 
 #[derive(Debug)]
@@ -53,8 +55,8 @@ pub enum ClientError {
     WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
 }
 
-impl Client {
-    pub fn new(username: String, password: String, client_name: String, client_version: String) -> Client {
+impl<T: EventListener> Client<T> {
+    pub fn new(username: String, password: String, client_name: String, client_version: String, event_listener: T) -> Client<T> {
         let http = ReqwestClient::new();
         Client {
             // Use a builder for this later. Part of a refactoring task.
@@ -72,6 +74,8 @@ impl Client {
 
             sessions: Vec::new(),
             dispatch_channel: channel(8),
+
+            event_listener
         }
     }
 
@@ -88,17 +92,17 @@ impl Client {
         Ok(())
     }
 
-    pub async fn refresh(&mut self) -> Result<(), ClientError> {
+    pub async fn refresh(&mut self) -> Result<&str, ClientError> {
         let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, false).await?;
         self.ticket = ticket.ticket;
         self.last_ticket = Instant::now();
-        Ok(())
+        Ok(&self.ticket)
     }
 
-    pub async fn refresh_fast(&mut self) -> Result<(), ClientError> {
+    pub async fn refresh_fast(&mut self) -> Result<&str, ClientError> {
         // Optimistically refresh if the token is more than 20 minutes old
         // Supposedly it lasts 30 minutes but I don't trust these devs and their crap API
-        if self.last_ticket + Duration::from_secs(20*60) < Instant::now() { return Ok(()) }
+        if self.last_ticket + Duration::from_secs(20*60) < Instant::now() { return Ok(&self.ticket) }
         self.refresh().await
     }
 
@@ -147,5 +151,27 @@ impl Client {
         })))
     }
 
+}
 
+pub trait EventListener {
+    fn raw_handler(&self, ctx: &Session, event: &str) {
+        self.raw_dispatch(ctx, parse_command(event));
+    }
+    fn raw_dispatch(&self, ctx: &Session, event: ServerCommand) {
+        match event {
+            ServerCommand::Hello {message} => self.hello(ctx, &message),
+            ServerCommand::Error {number, message} => self.raw_error(ctx, number, &message),
+            _ => eprintln!("Unhandled server command {event:?}")
+        }
+    }
+    fn raw_error(&self, ctx: &Session, id: i32, message: &str) {
+        // Map the ID to an appropriate known error type. Use enums.
+        let err: ProtocolError = id.into();
+
+    }
+
+    // Maybe unimplemented!() for these?
+    fn hello(&self, ctx: &Session, message: &str) {} 
+    fn message() {}
+    fn error() {}
 }

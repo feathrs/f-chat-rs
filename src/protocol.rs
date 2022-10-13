@@ -266,7 +266,7 @@ pub enum ServerCommand {
     #[serde(rename = "DOP")]
     GlobalDeopped { character: Character },
     #[serde(rename = "ERR")]
-    Error { number: u32, message: String },
+    Error { number: i32, message: String },
     #[serde(rename = "FKS")]
     Search {
         characters: Vec<Character>,
@@ -490,4 +490,104 @@ impl TryFrom<KinkIdExpanded> for KinkId {
 enum KinkIdExpanded {
     String(String),
     Number(u32)
+}
+
+#[derive(Debug)]
+pub enum ProtocolError {
+    
+    Success = 0, // Not an error.
+    SytaxError = 1,
+    FullServer = 2,
+    Unauthenticated = 3,
+    AuthenticationFailed = 4,
+    MessageCooldown = 5,
+    NoSuchCharacter = 6,
+    ProfileCooldown = 7,
+    UnknownCommand = 8,
+    Banned = 9,
+    AdminRequired = 10,
+    AlreadyIdentified = 11,
+    KinkCooldown = 13,
+    MessageTooLong = 15,
+    AlreadyModerator = 16,
+    NotAModerator = 17,
+    NoResults = 18,
+    ModeratorRequired = 19,
+    Ignored = 20,
+    InvalidTarget = 21,
+    NoSuchChannel = 26,
+    AlreadyInChannel = 28,
+    TooManySessions = 30,
+    AnotherConnection = 31,
+    AlreadyBanned = 32,
+    InvalidAuthentication = 33, // Hopefully this never crops up.
+    RollError = 36,
+    InvalidTimeoutDuration = 38,
+    TimeOut = 39,
+    Kick = 40,
+    AlreadyChannelBanned = 41,
+    NotChannelBanned = 42,
+    ChannelInviteRequired = 44,
+    ChannelJoinRequired = 45,
+    ChannelInviteForbidden = 47,
+    ChannelBanned = 48,
+    CharacterNotInChannel = 49,
+    SearchCooldown = 50,
+    ReportCooldown = 54,
+    AdCooldown = 56,
+    MessageOnly = 59,
+    AdsOnly = 60,
+    TooManySearchTerms = 61,
+    NoFreeSlots = 62,
+    IgnoreListTooLong = 64,
+    ChannelTitleTooLong = 67,
+    TooManySearchResults = 72,
+
+    InternalError = -1,
+    CommandError = -2,
+    Unimplemented = -3,
+    LoginTimeOut = -4,
+    UnknownError = -5,
+    FrontpageDice = -10,
+
+    Other = 9999
+}
+
+impl From<i32> for ProtocolError {
+    fn from(id: i32) -> Self {
+        match id {
+            _ => Self::Other
+        }
+    }
+}
+
+impl ProtocolError {
+    /// If an error `is_fatal` then the client should not attempt reconnection if:
+    /// - It is disconnected
+    /// - This error was the most recent before disconnection
+    pub fn is_fatal(&self) -> bool {
+        /*
+        2: The server is full and not able to accept additional connections at this time.
+        9: The user is banned.
+        30: The user is already connecting from too many clients at this time.
+        31: The character is logging in from another location and this connection is being terminated.
+        33: Invalid authentication method used.
+        39: The user is being timed out from the server.
+        40: The user is being kicked from the server.
+        */
+        match self {
+            Self::FullServer | Self::Banned | Self::TooManySessions | Self::AnotherConnection | Self::InvalidAuthentication | Self::TimeOut | Self::Kick | Self::InternalError => true,
+            _ => false
+        }
+    }
+
+    /// The errors themselves do not literally contain messages, but they are often transmitted with messages.
+    /// If an error object has a message, it means that the associated message is important and contains information about
+    /// the specific error; the error is not statically associated with the ID, and has variables interpolated.
+    pub fn has_message(&self) -> bool {
+        match self {
+            Self::Ignored | Self::TimeOut => true,
+            _ => false
+        }
+    }
 }
