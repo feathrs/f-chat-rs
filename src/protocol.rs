@@ -208,7 +208,7 @@ pub enum ServerCommand {
     #[serde(rename = "AOP")]
     GlobalOpped { character: Character },
     #[serde(rename = "BRO")]
-    Broadcast { message: String },
+    Broadcast { message: String, character: Character },
     #[serde(rename = "CDS")]
     ChannelDescription {
         channel: Channel,

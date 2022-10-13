@@ -15,7 +15,7 @@ use tokio::{net::TcpStream, sync::mpsc::{Sender, Receiver, channel}, task::JoinH
 use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
-use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character}, protocol::*};
+use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel}, protocol::*};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -31,6 +31,9 @@ pub struct Client<T: EventListener> {
     http_client: ReqwestClient,
     default_character: CharacterId,
 
+    // It might later be sane to move this into a specialized cache/state structure
+    // That way I can hide the implementation of the caching from consumers.
+    // For now, however, I need to understand how I'm using the data.
     characters: BiBTreeMap<Character, CharacterId>,
     bookmarks: Vec<Bookmark>,
     friends: Vec<Friend>,
@@ -153,14 +156,33 @@ impl<T: EventListener> Client<T> {
 
 }
 
+// I have accidentally complicated the need to dispatch events and manage state
+// I need to move dispatch back into the Client
+// And then give the EventListener specific access to upstream values via the context (which includes Session)
+// Notably, I may need to put the whole thing in an Arc. We'll see.
+// Wrapping everything in Arc+RwLock seems exceedingly safe, if a little cumbersome. It may be viable.
+// Later refactoring can go through and remove any unnecessary overhead that it generates.
+
 pub trait EventListener {
-    fn raw_handler(&self, ctx: &Session, event: &str) {
-        self.raw_dispatch(ctx, parse_command(event));
+    fn raw_handler<T: EventListener>(&self, client: &Client<T>, ctx: &Session, event: &str) {
+        // This doesn't usually get called -- The session handler already does this.
+        self.raw_dispatch(client, ctx, parse_command(event));
     }
-    fn raw_dispatch(&self, ctx: &Session, event: ServerCommand) {
+    fn raw_dispatch<T: EventListener>(&self, client: &Client<T>, ctx: &Session, event: ServerCommand) {
         match event {
             ServerCommand::Hello {message} => self.hello(ctx, &message),
             ServerCommand::Error {number, message} => self.raw_error(ctx, number, &message),
+
+            // Messages
+            ServerCommand::Broadcast { message, character } => self.message(ctx, &MessageSource::Character(character), &MessageTarget::Broadcast, &message),
+            ServerCommand::Message { character, message, channel } => self.message(ctx, &MessageSource::Character(character), &MessageTarget::Channel(channel), &message),
+            ServerCommand::PrivateMessage { character, message } => self.message(ctx, &MessageSource::Character(character.clone()), &MessageTarget::Character(character), &message),
+            ServerCommand::SystemMessage { message, channel } => self.message(ctx, &MessageSource::System, &MessageTarget::Channel(channel), &message),
+
+            // State updates
+            ServerCommand::ChannelData { users, channel, mode } => {}
+            ServerCommand::ProfileData { response_type, message, key, value } => {}
+
             _ => eprintln!("Unhandled server command {event:?}")
         }
     }
@@ -172,6 +194,20 @@ pub trait EventListener {
 
     // Maybe unimplemented!() for these?
     fn hello(&self, ctx: &Session, message: &str) {} 
-    fn message() {}
+    fn message(&self, ctx: &Session, source: &MessageSource, target: &MessageTarget, message: &str) {}
     fn error() {}
+}
+
+// Oh, and let's introduce a variety of non-protocol abstractions, to unify the client abstraction.
+#[derive(Debug)]
+pub enum MessageTarget {
+    Broadcast,
+    Channel(Channel),
+    Character(Character), 
+}
+
+#[derive(Debug)]
+pub enum MessageSource {
+    System,
+    Character(Character)
 }
