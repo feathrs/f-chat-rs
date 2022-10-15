@@ -414,7 +414,7 @@ pub enum ServerCommand {
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct CharacterIdentity {
-    pub identity: String,
+    pub identity: Character,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]

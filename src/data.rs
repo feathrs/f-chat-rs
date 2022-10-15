@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::stringable;
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub enum Gender {
     Male,
@@ -21,7 +21,7 @@ impl Default for Gender {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub enum Orientation {
     Straight,
@@ -43,7 +43,7 @@ impl Default for Orientation {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub enum Language {
     Dutch,
@@ -67,7 +67,7 @@ impl Default for Language {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 pub enum FurryPreference {
     #[serde(rename = "No furry characters, just humans")]
     HumanOnly,
@@ -86,7 +86,7 @@ impl Default for FurryPreference {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub enum Role {
     #[serde(rename = "Always dominant")]
@@ -106,7 +106,7 @@ impl Default for Role {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ChannelMode {
     #[serde(rename = "chat")]
@@ -121,7 +121,7 @@ impl Default for ChannelMode {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum ChannelStatus {
     Public,
@@ -133,7 +133,7 @@ impl Default for ChannelStatus {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
     Online,
@@ -151,7 +151,7 @@ impl Default for Status {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum TypingStatus {
     Clear,
@@ -164,7 +164,7 @@ impl Default for TypingStatus {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum KinkInterest {
     Fave,
