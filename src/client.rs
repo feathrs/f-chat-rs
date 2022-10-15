@@ -14,7 +14,7 @@
 use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet, BTreeMap}};
 use bimap::BiBTreeMap;
 use dashmap::DashMap;
-use parking_lot::RwLock;
+use parking_lot::{RwLock, Mutex};
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
@@ -51,7 +51,8 @@ pub struct Client<T: EventListener> {
     pub channel_data: DashMap<Channel, ChannelData>,
 
     sessions: RwLock<Vec<Arc<Session>>>,
-    dispatch_channel: (Sender<Event>, Receiver<Event>),
+    send_channel: Sender<Event>,
+    rcv_channel: Mutex<Receiver<Event>>,
 
     event_listener: T
 }
@@ -117,6 +118,7 @@ impl Token {
 impl<T: EventListener> Client<T> {
     pub fn new(username: String, password: String, client_name: String, client_version: String, event_listener: T) -> Client<T> {
         let http = ReqwestClient::new();
+        let (send, rcv) = channel(8);
         Client {
             // Use a builder for this later. Part of a refactoring task.
             client_name, client_version,
@@ -133,7 +135,9 @@ impl<T: EventListener> Client<T> {
             channel_data: DashMap::new(),
 
             sessions: RwLock::new(Vec::new()),
-            dispatch_channel: channel(8),
+            send_channel: send,
+            rcv_channel: Mutex::new(rcv),
+
 
             event_listener
         }
@@ -189,7 +193,7 @@ impl<T: EventListener> Client<T> {
         self.sessions.write().push(session.clone());
 
         // Oh, and something will need to listen to these...
-        let chan = self.dispatch_channel.0.clone();
+        let chan = self.send_channel.clone();
         Ok(tokio::spawn(read.for_each(move |res| {
             // We don't want this to happen concurrently, because the events need to arrive in order
             // But they only need to arrive in order for any given connection.
@@ -274,8 +278,13 @@ impl<T: EventListener> Client<T> {
         }
     }
 
-    pub fn start(&self) {
-        // Rust-analyzer is being funny and telling me Sender members for Receiver
+    pub async fn start(&self) {
+        let mut chan = self.rcv_channel.lock(); // Lock it away forever. Sorry kid - Mine now.
+        // Usually, there are warnings about holding a lock across an await boundary
+        // In this case, however, it should be fine, provided that the guard is Send
+        while let Some(event) = chan.recv().await {
+            self.dispatch(event).await;
+        }
     }
 }
 
