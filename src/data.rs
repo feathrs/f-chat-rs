@@ -15,6 +15,11 @@ pub enum Gender {
     CBoy, // Look, I don't make the rules.
     None,
 }
+impl Default for Gender {
+    fn default() -> Self {
+        Self::None
+    }
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "PascalCase")]
@@ -31,6 +36,11 @@ pub enum Orientation {
     Pansexual,
     #[serde(rename = "Bi-curious")]
     Bicurious,
+}
+impl Default for Orientation {
+    fn default() -> Self {
+        Self::Unsure
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -51,6 +61,11 @@ pub enum Language {
     Swedish,
     Other,
 }
+impl Default for Language {
+    fn default() -> Self {
+        Self::English // Other? No. English.
+    }
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub enum FurryPreference {
@@ -64,6 +79,11 @@ pub enum FurryPreference {
     FurryPref,
     #[serde(rename = "No humans, just furry characters")]
     FurryOnly,
+}
+impl Default for FurryPreference {
+    fn default() -> Self {
+        Self::Both
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -80,6 +100,11 @@ pub enum Role {
     AlwaysSub,
     None,
 }
+impl Default for Role {
+    fn default() -> Self {
+        Self::None
+    }
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -90,12 +115,22 @@ pub enum ChannelMode {
     AdsOnly,
     Both,
 }
+impl Default for ChannelMode {
+    fn default() -> Self {
+        Self::Both
+    }
+}
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 pub enum ChannelStatus {
     Public,
     Private,
+}
+impl Default for ChannelStatus {
+    fn default() -> Self {
+        Self::Public
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -108,6 +143,12 @@ pub enum Status {
     Idle,
     Away,
     Crown, // If you try to set crown, you will die.
+    Offline // Also this isn't transmitted by the server but it's sane and internal.
+}
+impl Default for Status {
+    fn default() -> Self {
+        Self::Online // Assume online unless *explicitly* Offline.
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -116,6 +157,11 @@ pub enum TypingStatus {
     Clear,
     Paused,
     Typing,
+}
+impl Default for TypingStatus {
+    fn default() -> Self {
+        Self::Clear
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -126,9 +172,10 @@ pub enum KinkInterest {
     Maybe,
     No
 }
+// No default impl for KinkInterest because it's not sane; unlisted kinks should never be in a collection.
 
 // Strong typing for string IDs
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Channel(pub String);
 #[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
 pub struct Character(pub String);
