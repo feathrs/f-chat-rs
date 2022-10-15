@@ -18,7 +18,7 @@ use parking_lot::{RwLock, Mutex};
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
-use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, RwLock as AsyncRwLock}, task::JoinHandle};
+use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as AsyncMutex}, task::JoinHandle};
 use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
@@ -52,7 +52,7 @@ pub struct Client<T: EventListener> {
 
     sessions: RwLock<Vec<Arc<Session>>>,
     send_channel: Sender<Event>,
-    rcv_channel: Mutex<Receiver<Event>>,
+    rcv_channel: AsyncMutex<Receiver<Event>>,
 
     event_listener: T
 }
@@ -136,7 +136,7 @@ impl<T: EventListener> Client<T> {
 
             sessions: RwLock::new(Vec::new()),
             send_channel: send,
-            rcv_channel: Mutex::new(rcv),
+            rcv_channel: AsyncMutex::new(rcv),
 
 
             event_listener
@@ -279,9 +279,10 @@ impl<T: EventListener> Client<T> {
     }
 
     pub async fn start(&self) {
-        let mut chan = self.rcv_channel.lock(); // Lock it away forever. Sorry kid - Mine now.
-        // Usually, there are warnings about holding a lock across an await boundary
-        // In this case, however, it should be fine, provided that the guard is Send
+        let mut chan = self.rcv_channel.lock().await; // Lock it away forever. Sorry kid - Mine now.
+        // Usually, using an async Mutex only because this holds the lock across an await boundary
+        // A normal parking_lot Mutex should be fine (The guard implements Send) but there's no reason
+        // not to express an abundance of caution here. 
         while let Some(event) = chan.recv().await {
             self.dispatch(event).await;
         }
