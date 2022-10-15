@@ -6,16 +6,23 @@
 // - Combine WS sessions and HTTP endpoints into one thing
 // - Use a trait implementation for events. Have a generic client.
 
-use std::{time::{Instant, Duration}, sync::Arc};
+// Because this is async, I need two sets of sync/locking objects.
+// If I never lock across an await, I can safely* use blocking locks from parking_lot
+// Otherwise, I should use the locks from Tokio, or I can cause a deadlock.
+// I should also use async locks if contention is high or leases are long.
+
+use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet, BTreeMap}};
 use bimap::BiBTreeMap;
+use dashmap::DashMap;
+use parking_lot::RwLock;
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
-use tokio::{net::TcpStream, sync::mpsc::{Sender, Receiver, channel}, task::JoinHandle};
+use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, RwLock as AsyncRwLock}, task::JoinHandle};
 use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::Message};
 use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
-use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel}, protocol::*};
+use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel, ChannelMode}, protocol::*};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -26,20 +33,25 @@ pub struct Client<T: EventListener> {
 
     username: String,
     password: String,
-    ticket: String,
-    last_ticket: Instant,
+    ticket: RwLock<Token>,
     http_client: ReqwestClient,
     default_character: CharacterId,
 
     // It might later be sane to move this into a specialized cache/state structure
     // That way I can hide the implementation of the caching from consumers.
     // For now, however, I need to understand how I'm using the data.
-    characters: BiBTreeMap<Character, CharacterId>,
+    // Own account data
+    own_characters: BiBTreeMap<Character, CharacterId>,
     bookmarks: Vec<Bookmark>,
     friends: Vec<Friend>,
 
-    sessions: Vec<Arc<Session>>,
-    dispatch_channel: (Sender<ServerCommand>, Receiver<ServerCommand>),
+    // Global data
+    // I am using DashMap because I don't want to deal with locking, but this might be better as a BTreeMap
+    // if I feel like handling locking myself at some point.
+    pub channel_data: DashMap<Channel, ChannelData>,
+
+    sessions: RwLock<Vec<Arc<Session>>>,
+    dispatch_channel: (Sender<Event>, Receiver<Event>),
 
     event_listener: T
 }
@@ -47,7 +59,24 @@ pub struct Client<T: EventListener> {
 #[derive(Debug)]
 pub struct Session {
     character: Character,
+    channels: BTreeSet<Channel>,
     write: SplitSink<Socket, Message>
+}
+
+#[derive(Debug)]
+struct Event {
+    session: Arc<Session>,
+    command: ServerCommand
+}
+
+/// Full channel data; everything that describes the channel, inc. members.
+#[derive(Debug, Default)]
+pub struct ChannelData {
+    channel_mode: ChannelMode,
+    members: BTreeSet<Character>,
+    description: String,
+    title: String,
+
 }
 
 #[derive(Error, Debug)]
@@ -58,6 +87,33 @@ pub enum ClientError {
     WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
 }
 
+#[derive(Debug, Clone)]
+struct Token {
+    last_updated: Instant,
+    pub ticket: String
+}
+
+impl Token {
+    fn new(ticket: String) -> Token {
+        Token {
+            ticket, last_updated: Instant::now()
+        }
+    }
+    fn zero() -> Token {
+        Token {
+            ticket: "NONE".to_owned(),
+            last_updated: Instant::now() - Duration::from_secs(60*60) // Pretend that the last ticket was an hour ago.
+        }
+    }
+    fn expired(&self) -> bool {
+        self.last_updated.elapsed() > Duration::from_secs(25*60)
+    }
+    fn update(&mut self, new: String) {
+        self.ticket = new;
+        self.last_updated = Instant::now();
+    }
+}
+
 impl<T: EventListener> Client<T> {
     pub fn new(username: String, password: String, client_name: String, client_version: String, event_listener: T) -> Client<T> {
         let http = ReqwestClient::new();
@@ -66,16 +122,17 @@ impl<T: EventListener> Client<T> {
             client_name, client_version,
 
             username, password, 
-            ticket: "NONE".to_owned(),
-            last_ticket: Instant::now() - Duration::from_secs(60*60), // Pretend that the last ticket was an hour ago.
+            ticket: RwLock::new(Token::zero()),
             http_client: http,
             default_character: CharacterId(0),
 
-            characters: BiBTreeMap::new(),
+            own_characters: BiBTreeMap::new(),
             bookmarks: Vec::new(),
             friends: Vec::new(),
 
-            sessions: Vec::new(),
+            channel_data: DashMap::new(),
+
+            sessions: RwLock::new(Vec::new()),
             dispatch_channel: channel(8),
 
             event_listener
@@ -84,39 +141,39 @@ impl<T: EventListener> Client<T> {
 
     pub async fn init(&mut self) -> Result<(), ClientError> {
         let mut ticket = get_api_ticket(&self.http_client, &self.username, &self.password, true).await?;
-        self.ticket = ticket.ticket;
-        self.last_ticket = Instant::now();
+        self.ticket.write().update(ticket.ticket);
         self.default_character = ticket.default_character;
 
-        self.characters = ticket.characters.drain().collect();
+        self.own_characters = ticket.characters.drain().collect();
         self.bookmarks = ticket.bookmarks;
         self.friends = ticket.friends;
 
         Ok(())
     }
 
-    pub async fn refresh(&mut self) -> Result<&str, ClientError> {
+    pub async fn refresh(&self) -> Result<(), ClientError> {
         let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, false).await?;
-        self.ticket = ticket.ticket;
-        self.last_ticket = Instant::now();
-        Ok(&self.ticket)
+        self.ticket.write().update(ticket.ticket);
+        Ok(())
     }
 
-    pub async fn refresh_fast(&mut self) -> Result<&str, ClientError> {
+    pub async fn refresh_fast(&self) -> Result<(), ClientError> {
         // Optimistically refresh if the token is more than 20 minutes old
         // Supposedly it lasts 30 minutes but I don't trust these devs and their crap API
-        if self.last_ticket + Duration::from_secs(20*60) < Instant::now() { return Ok(&self.ticket) }
-        self.refresh().await
+        if self.ticket.read().expired() {
+            self.refresh().await?;
+        }
+        Ok(())
     }
 
-    pub async fn connect(&mut self, character: Character) -> Result<JoinHandle<()>, ClientError> {
+    pub async fn connect(&self, character: Character) -> Result<JoinHandle<()>, ClientError> {
         self.refresh_fast().await?;
         let (mut socket, _) = connect_async("wss://chat.f-list.net/chat2").await?;
         
         socket.send(Message::Text(prepare_command(&ClientCommand::Identify { 
             method: IdentifyMethod::Ticket, 
             account: self.username.clone(), 
-            ticket: self.ticket.clone(), 
+            ticket: self.ticket.read().ticket.clone(), 
             character: character.clone(), 
             client_name: self.client_name.clone(), 
             client_version: self.client_version.clone() 
@@ -127,8 +184,9 @@ impl<T: EventListener> Client<T> {
         let session = Arc::new(Session {
             character,
             write,
+            channels: BTreeSet::new()
         });
-        self.sessions.push(session.clone());
+        self.sessions.write().push(session.clone());
 
         // Oh, and something will need to listen to these...
         let chan = self.dispatch_channel.0.clone();
@@ -137,6 +195,7 @@ impl<T: EventListener> Client<T> {
             // But they only need to arrive in order for any given connection.
             // Connections will end up interleaved in the channel consumer.
             let chan = chan.clone();
+            let session = session.clone();
             async move {
                 match res {
                     Err(err) => {eprintln!("Error when reading from session: {err:?}");},
@@ -144,8 +203,11 @@ impl<T: EventListener> Client<T> {
                         match ok.to_text() {
                             Err(err) => {eprintln!("Message frame is not text: {err:?}");},
                             Ok(text) => {
-                                let command = parse_command(text);
-                                chan.send(command).await.expect("Failed to send command through Tokio mpsc channel");
+                                let command = parse_command(dbg!(text));
+                                chan.send(Event {
+                                    command,
+                                    session
+                                }).await.expect("Failed to send command through Tokio mpsc channel");
                             }
                         };
                     }
@@ -154,6 +216,67 @@ impl<T: EventListener> Client<T> {
         })))
     }
 
+    async fn dispatch(&self, event: Event) {
+        match event.command {
+            ServerCommand::Hello {message} => self.event_listener.hello(event.session, &message),
+            ServerCommand::Error {number, message} => self.event_listener.raw_error(event.session, number, &message),
+
+            // Messages
+            ServerCommand::Broadcast { message, character } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Broadcast, &message),
+            ServerCommand::Message { character, message, channel } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Channel(channel), &message),
+            ServerCommand::PrivateMessage { character, message } => self.event_listener.message(event.session, &MessageSource::Character(character.clone()), &MessageTarget::Character(character), &message),
+            ServerCommand::SystemMessage { message, channel } => self.event_listener.message(event.session, &MessageSource::System, &MessageTarget::Channel(channel), &message),
+
+            // State updates (Channels)
+            ServerCommand::ChannelData { mut users, channel, mode } => {
+                // CharacterIdentity is just Character, but structurally different because F-Chat.
+                // Turn it into Character when storing it.
+                // Maybe later can transmute if I promise they have the same memory layout (transparent String)
+                let mut entry = self.channel_data.entry(channel).or_default();
+                entry.channel_mode = mode;
+                entry.members = users.drain(..).map(|v|v.identity).collect();
+            },
+            ServerCommand::ChannelDescription { channel, description } => {
+                let mut entry = self.channel_data.entry(channel).or_default();
+                entry.description = description;
+            }
+            ServerCommand::ChannelMode { mode, channel } => {
+                let mut entry = self.channel_data.entry(channel).or_default();
+                entry.channel_mode = mode;
+            }
+            ServerCommand::JoinedChannel { channel, character, title } => {
+                let mut entry = self.channel_data.entry(channel).or_default();
+                entry.title = title;
+                entry.members.insert(character.identity);
+            }
+            ServerCommand::LeftChannel { channel, character } => {
+                let mut entry = self.channel_data.entry(channel).or_default();
+                entry.members.remove(&character);
+            }
+
+            // State updates (Characters)
+            ServerCommand::ProfileData { response_type, message, key, value } => {
+                // There's two ways to handle this:
+                // - Statefully, where the client tracks the start/end and issues a profile update at the end
+                // - Statelessly, where the client updates every time and emits an update event at the end
+                // In this case, stateless simply makes the most sense.
+                // However, because the profiles are keyed with strong keys rather than strings, it'll need matching.
+                // There are also potential race conditions for profile updates, but I'm not sure that I actually care.
+                match response_type {
+                    ProfileDataPart::Start => {},
+                    ProfileDataPart::Info => {},
+                    ProfileDataPart::Select => {},
+                    ProfileDataPart::End => {}
+                }
+            }
+
+            _ => eprintln!("Unhandled server command {event:?}")
+        }
+    }
+
+    pub fn start(&self) {
+        // Rust-analyzer is being funny and telling me Sender members for Receiver
+    }
 }
 
 // I have accidentally complicated the need to dispatch events and manage state
@@ -164,37 +287,15 @@ impl<T: EventListener> Client<T> {
 // Later refactoring can go through and remove any unnecessary overhead that it generates.
 
 pub trait EventListener {
-    fn raw_handler<T: EventListener>(&self, client: &Client<T>, ctx: &Session, event: &str) {
-        // This doesn't usually get called -- The session handler already does this.
-        self.raw_dispatch(client, ctx, parse_command(event));
-    }
-    fn raw_dispatch<T: EventListener>(&self, client: &Client<T>, ctx: &Session, event: ServerCommand) {
-        match event {
-            ServerCommand::Hello {message} => self.hello(ctx, &message),
-            ServerCommand::Error {number, message} => self.raw_error(ctx, number, &message),
-
-            // Messages
-            ServerCommand::Broadcast { message, character } => self.message(ctx, &MessageSource::Character(character), &MessageTarget::Broadcast, &message),
-            ServerCommand::Message { character, message, channel } => self.message(ctx, &MessageSource::Character(character), &MessageTarget::Channel(channel), &message),
-            ServerCommand::PrivateMessage { character, message } => self.message(ctx, &MessageSource::Character(character.clone()), &MessageTarget::Character(character), &message),
-            ServerCommand::SystemMessage { message, channel } => self.message(ctx, &MessageSource::System, &MessageTarget::Channel(channel), &message),
-
-            // State updates
-            ServerCommand::ChannelData { users, channel, mode } => {}
-            ServerCommand::ProfileData { response_type, message, key, value } => {}
-
-            _ => eprintln!("Unhandled server command {event:?}")
-        }
-    }
-    fn raw_error(&self, ctx: &Session, id: i32, message: &str) {
+    fn raw_error(&self, ctx: Arc<Session>, id: i32, message: &str) {
         // Map the ID to an appropriate known error type. Use enums.
         let err: ProtocolError = id.into();
 
     }
 
     // Maybe unimplemented!() for these?
-    fn hello(&self, ctx: &Session, message: &str) {} 
-    fn message(&self, ctx: &Session, source: &MessageSource, target: &MessageTarget, message: &str) {}
+    fn hello(&self, ctx: Arc<Session>, message: &str) {} 
+    fn message(&self, ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
     fn error() {}
 }
 
