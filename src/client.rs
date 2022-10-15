@@ -289,13 +289,6 @@ impl<T: EventListener> Client<T> {
     }
 }
 
-// I have accidentally complicated the need to dispatch events and manage state
-// I need to move dispatch back into the Client
-// And then give the EventListener specific access to upstream values via the context (which includes Session)
-// Notably, I may need to put the whole thing in an Arc. We'll see.
-// Wrapping everything in Arc+RwLock seems exceedingly safe, if a little cumbersome. It may be viable.
-// Later refactoring can go through and remove any unnecessary overhead that it generates.
-
 pub trait EventListener {
     fn raw_error(&self, ctx: Arc<Session>, id: i32, message: &str) {
         // Map the ID to an appropriate known error type. Use enums.
