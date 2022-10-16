@@ -59,8 +59,8 @@ pub struct Client<T: EventListener> {
 
 #[derive(Debug)]
 pub struct Session {
-    character: Character,
-    channels: BTreeSet<Channel>,
+    pub character: Character,
+    pub channels: BTreeSet<Channel>,
     write: SplitSink<Socket, Message>
 }
 
@@ -174,10 +174,12 @@ impl<T: EventListener> Client<T> {
         self.refresh_fast().await?;
         let (mut socket, _) = connect_async("wss://chat.f-list.net/chat2").await?;
         
+        let ticket = self.ticket.read().ticket.clone();
+        
         socket.send(Message::Text(prepare_command(&ClientCommand::Identify { 
             method: IdentifyMethod::Ticket, 
             account: self.username.clone(), 
-            ticket: self.ticket.read().ticket.clone(), 
+            ticket, 
             character: character.clone(), 
             client_name: self.client_name.clone(), 
             client_version: self.client_version.clone() 
