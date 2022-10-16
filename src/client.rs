@@ -209,7 +209,7 @@ impl<T: EventListener> Client<T> {
                         match ok.to_text() {
                             Err(err) => {eprintln!("Message frame is not text: {err:?}");},
                             Ok(text) => {
-                                let command = parse_command(text);
+                                let command = parse_command(dbg!(text));
                                 chan.send(Event {
                                     command,
                                     session
