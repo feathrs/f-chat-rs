@@ -249,6 +249,7 @@ impl<T: EventListener> Client<T> {
         match event.command {
             ServerCommand::Hello {message} => self.event_listener.hello(event.session, &message),
             ServerCommand::Error {number, message} => self.event_listener.raw_error(event.session, number, &message),
+            ServerCommand::Connected { count } => self.event_listener.connected(event.session, count),
 
             // Messages
             ServerCommand::Broadcast { message, character } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Broadcast, &message),
@@ -380,6 +381,7 @@ pub trait EventListener {
 
     // Maybe unimplemented!() for these?
     fn hello(&self, ctx: Arc<Session>, message: &str) {} 
+    fn connected(&self, ctx: Arc<Session>, count: u32) {}
     fn message(&self, ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
     fn error() {}
 }
