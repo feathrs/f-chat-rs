@@ -22,7 +22,7 @@ use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as A
 use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::{Message, protocol::WebSocketConfig}, connect_async_tls_with_config};
 use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
-use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status}, protocol::*};
+use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -65,6 +65,7 @@ pub struct Client<T: EventListener> {
 pub struct Session {
     pub character: Character,
     pub channels: BTreeSet<Channel>,
+    pub pms: DashMap<Character, TypingStatus>,
     write: AsyncMutex<SplitSink<Socket, Message>>
 }
 
@@ -213,7 +214,8 @@ impl<T: EventListener> Client<T> {
         let session = Arc::new(Session {
             character,
             write: AsyncMutex::new(write),
-            channels: BTreeSet::new()
+            channels: BTreeSet::new(),
+            pms: DashMap::new(),
         });
         self.sessions.write().push(session.clone());
 
@@ -254,7 +256,7 @@ impl<T: EventListener> Client<T> {
             // Messages
             ServerCommand::Broadcast { message, character } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Broadcast, &message),
             ServerCommand::Message { character, message, channel } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Channel(channel), &message),
-            ServerCommand::PrivateMessage { character, message } => self.event_listener.message(event.session, &MessageSource::Character(character.clone()), &MessageTarget::Character(character), &message),
+            ServerCommand::PrivateMessage { character, message } => self.event_listener.message(event.session, &MessageSource::Character(character.clone()), &MessageTarget::PrivateMessage(character), &message),
             ServerCommand::SystemMessage { message, channel } => self.event_listener.message(event.session, &MessageSource::System, &MessageTarget::Channel(channel), &message),
 
             // State updates (Channels)
@@ -282,6 +284,11 @@ impl<T: EventListener> Client<T> {
             ServerCommand::LeftChannel { channel, character } => {
                 let mut entry = self.channel_data.entry(channel).or_default();
                 entry.members.remove(&character);
+            }
+            // If you think about it, typing is just a state update for a PM channel. Sort of.
+            ServerCommand::Typing { character, status } => {
+                event.session.pms.insert(character.clone(), status);
+                self.event_listener.typing(event.session, character, status);
             }
 
             // State updates (Characters)
@@ -357,6 +364,7 @@ impl<T: EventListener> Client<T> {
             // Ping
             ServerCommand::Ping => {
                 event.session.send(ClientCommand::Pong).await.expect("Failed to Pong!");
+                self.event_listener.ping(event.session);
             }
 
             _ => eprintln!("Unhandled server command {event:?}")
@@ -376,13 +384,22 @@ pub trait EventListener {
     fn raw_error(&self, ctx: Arc<Session>, id: i32, message: &str) {
         // Map the ID to an appropriate known error type. Use enums.
         let err: ProtocolError = id.into();
-
+        if err.is_fatal() {
+            panic!("Fatal error: {err:?}")
+        }
+        if err.has_message() {
+            eprintln!("Error {err:?} -- {message}")
+        } else {
+            eprintln!("Error {err:?}")
+        }
     }
 
     // Maybe unimplemented!() for these?
     fn hello(&self, ctx: Arc<Session>, message: &str) {} 
     fn connected(&self, ctx: Arc<Session>, count: u32) {}
+    fn ping(&self, ctx: Arc<Session>) {}
     fn message(&self, ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
+    fn typing(&self, ctx: Arc<Session>, character: Character, status: TypingStatus) {}
     fn error() {}
 }
 
@@ -391,7 +408,7 @@ pub trait EventListener {
 pub enum MessageTarget {
     Broadcast,
     Channel(Channel),
-    Character(Character), 
+    PrivateMessage(Character), 
 }
 
 #[derive(Debug)]
