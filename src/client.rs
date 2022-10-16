@@ -66,7 +66,21 @@ pub struct Session {
     pub character: Character,
     pub channels: BTreeSet<Channel>,
     pub pms: DashMap<Character, TypingStatus>,
+
+    pub variables: RwLock<Variables>,
+
     write: AsyncMutex<SplitSink<Socket, Message>>
+}
+
+#[derive(Debug, Default)]
+pub struct Variables {
+    pub chat_max: u32,
+    pub priv_max: u32,
+    pub ad_max: u32,
+    pub chat_cooldown: f32,
+    pub ad_cooldown: f32,
+    pub status_cooldown: f32,
+    pub icon_blacklist: Vec<Channel>,
 }
 
 impl Session {
@@ -216,6 +230,7 @@ impl<T: EventListener> Client<T> {
             write: AsyncMutex::new(write),
             channels: BTreeSet::new(),
             pms: DashMap::new(),
+            variables: Default::default()
         });
         self.sessions.write().push(session.clone());
 
@@ -249,9 +264,25 @@ impl<T: EventListener> Client<T> {
 
     async fn dispatch(&self, event: Event) {
         match event.command {
+            ServerCommand::IdentifySuccess { character } => assert_eq!(event.session.character, character),
             ServerCommand::Hello {message} => self.event_listener.hello(event.session, &message),
             ServerCommand::Error {number, message} => self.event_listener.raw_error(event.session, number, &message),
             ServerCommand::Connected { count } => self.event_listener.connected(event.session, count),
+
+            // Variables init
+            ServerCommand::Variable(var) => {
+                let mut vars = event.session.variables.write();
+                match var {
+                    Variable::AdCooldown(t) => vars.ad_cooldown = t,
+                    Variable::ChatCooldown(t) => vars.chat_cooldown = t,
+                    Variable::StatusCooldown(t) => vars.status_cooldown = t,
+                    Variable::AdMax(n) => vars.ad_max = n,
+                    Variable::ChatMax(n) => vars.chat_max = n,
+                    Variable::PrivMax(n) => vars.priv_max = n,
+                    Variable::IconBlacklist(channels) => vars.icon_blacklist = channels,
+                    _ => eprintln!("Unhandled variable {var:?}"),
+                }
+            }
 
             // Messages
             ServerCommand::Broadcast { message, character } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Broadcast, &message),

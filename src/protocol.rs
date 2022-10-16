@@ -55,7 +55,7 @@ pub fn prepare_command(command: &ClientCommand) -> String {
 // Being a 3 character command code, followed by JSON data
 // This is fine.
 
-#[derive(Serialize, PartialEq, Eq, Debug)]
+#[derive(Serialize, PartialEq, Debug)]
 #[serde(tag = "command", content = "data")]
 pub enum ClientCommand {
     #[serde(rename = "ACB")]
@@ -211,7 +211,7 @@ pub enum ClientCommand {
     Uptime,
 }
 
-#[derive(Deserialize, PartialEq, Eq, Debug)]
+#[derive(Deserialize, PartialEq, Debug)]
 #[serde(tag = "command", content = "data")]
 pub enum ServerCommand {
     #[serde(rename = "ADL")]
@@ -417,10 +417,27 @@ pub enum ServerCommand {
         maxusers: u32,
     },
     #[serde(rename = "VAR")]
-    Variable {
-        variable: String,
-        value: serde_json::Value,
-    }, // Could be int, float, [string]; I hate it. Use an adjacently tagged enum.
+    Variable(Variable), // Could be int, float, [string]; I hate it. Use an adjacently tagged enum.
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[serde(tag = "variable", content = "value")]
+#[serde(rename_all = "snake_case")]
+pub enum Variable {
+    ChatMax(u32),
+    PrivMax(u32),
+    #[serde(rename = "lfrp_max")]
+    AdMax(u32),
+    #[serde(rename = "cds_max")]
+    CDSMax(u32), // What is this?
+    #[serde(rename = "lfrp_flood")]
+    AdCooldown(f32),
+    #[serde(rename = "msg_flood")]
+    ChatCooldown(f32),
+    #[serde(rename = "sta_flood")]
+    StatusCooldown(f32),
+    Permissions(String),
+    IconBlacklist(Vec<Channel>),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -505,7 +522,6 @@ enum KinkIdExpanded {
 
 #[derive(Debug)]
 pub enum ProtocolError {
-    
     Success = 0, // Not an error.
     SytaxError = 1,
     FullServer = 2,
