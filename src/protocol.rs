@@ -17,8 +17,6 @@ struct CommandDummy {
 // Use Serde to convert them to/from adjacent format
 // These should later return a specific Result instead.
 pub fn parse_command(command: &str) -> ServerCommand {
-    // Split the command into the JSON data body and the command head
-    let (head, data) = command.split_at(4);
     from_value(
         to_value(
             if command.len() < 4 {
@@ -28,6 +26,8 @@ pub fn parse_command(command: &str) -> ServerCommand {
                     data: Value::Null
                 }
             } else {
+                // Split the command into the JSON data body and the command head
+                let (head, data) = command.split_at(4);
                 CommandDummy {
                     command: head.trim().to_string(),
                     data: from_str(data).expect("Unable to parse data to Value"),
