@@ -11,6 +11,7 @@ use std::{io::Write as _, str::FromStr};
 #[derive(Serialize, Deserialize, Debug)]
 struct CommandDummy {
     command: String, // This was originally &'a str, but this caused serde to complain about Deserialize having insufficient lifetimes.
+    #[serde(default)]
     data: Value,
 }
 
