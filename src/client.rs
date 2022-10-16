@@ -41,9 +41,9 @@ pub struct Client<T: EventListener> {
     // That way I can hide the implementation of the caching from consumers.
     // For now, however, I need to understand how I'm using the data.
     // Own account data
-    own_characters: BiBTreeMap<Character, CharacterId>,
-    bookmarks: Vec<Bookmark>,
-    friends: Vec<Friend>,
+    pub own_characters: BiBTreeMap<Character, CharacterId>,
+    pub bookmarks: Vec<Bookmark>,
+    pub friends: Vec<Friend>,
 
     // Global data
     // I am using DashMap because I don't want to deal with locking, but this might be better as a BTreeMap
