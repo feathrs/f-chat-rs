@@ -65,7 +65,13 @@ pub struct Client<T: EventListener> {
 pub struct Session {
     pub character: Character,
     pub channels: BTreeSet<Channel>,
-    write: SplitSink<Socket, Message>
+    write: AsyncMutex<SplitSink<Socket, Message>>
+}
+
+impl Session {
+    pub async fn send(&self, command: ClientCommand) -> Result<(), ClientError> {
+        Ok(self.write.lock().await.send(Message::Text(prepare_command(&command))).await?)
+    }
 }
 
 #[derive(Debug)]
@@ -86,9 +92,9 @@ pub struct ChannelData {
 
 #[derive(Debug, Default)]
 pub struct CharacterData {
-    gender: Gender,
-    status: Status,
-    status_message: String,
+    pub gender: Gender,
+    pub status: Status,
+    pub status_message: String,
 }
 
 #[derive(Error, Debug)]
@@ -206,7 +212,7 @@ impl<T: EventListener> Client<T> {
 
         let session = Arc::new(Session {
             character,
-            write,
+            write: AsyncMutex::new(write),
             channels: BTreeSet::new()
         });
         self.sessions.write().push(session.clone());
@@ -347,15 +353,18 @@ impl<T: EventListener> Client<T> {
                 }
             },
 
+            // Ping
+            ServerCommand::Ping => {
+                event.session.send(ClientCommand::Pong).await.expect("Failed to Pong!");
+            }
+
             _ => eprintln!("Unhandled server command {event:?}")
         }
     }
 
     pub async fn start(&self) {
         let mut chan = self.rcv_channel.lock().await; // Lock it away forever. Sorry kid - Mine now.
-        // Usually, using an async Mutex only because this holds the lock across an await boundary
-        // A normal parking_lot Mutex should be fine (The guard implements Send) but there's no reason
-        // not to express an abundance of caution here. 
+        // using an async Mutex only because this holds the lock across an await boundary
         while let Some(event) = chan.recv().await {
             self.dispatch(event).await;
         }
