@@ -22,7 +22,7 @@ use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as A
 use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::{Message, protocol::WebSocketConfig}, connect_async_tls_with_config};
 use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
-use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel, ChannelMode}, protocol::*};
+use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status}, protocol::*};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -49,6 +49,7 @@ pub struct Client<T: EventListener> {
     // I am using DashMap because I don't want to deal with locking, but this might be better as a BTreeMap
     // if I feel like handling locking myself at some point.
     pub channel_data: DashMap<Channel, ChannelData>,
+    pub character_data: DashMap<Character, CharacterData>,
 
     sessions: RwLock<Vec<Arc<Session>>>,
     send_channel: Sender<Event>,
@@ -78,6 +79,13 @@ pub struct ChannelData {
     description: String,
     title: String,
 
+}
+
+#[derive(Debug, Default)]
+pub struct CharacterData {
+    gender: Gender,
+    status: Status,
+    status_message: String,
 }
 
 #[derive(Error, Debug)]
@@ -133,6 +141,7 @@ impl<T: EventListener> Client<T> {
             friends: Vec::new(),
 
             channel_data: DashMap::new(),
+            character_data: DashMap::new(),
 
             sessions: RwLock::new(Vec::new()),
             send_channel: send,
@@ -277,7 +286,16 @@ impl<T: EventListener> Client<T> {
                 }
             }
             */
-
+            ServerCommand::ListOnline { mut characters } => {
+                // This command is *sinful* and floods with every character's info. All of them.
+                for character in characters.drain(..) {
+                    self.character_data.insert(character.0, CharacterData {
+                        gender: character.1,
+                        status: character.2,
+                        status_message: character.3,
+                    });
+                }
+            }
 
             _ => eprintln!("Unhandled server command {event:?}")
         }

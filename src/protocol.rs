@@ -304,7 +304,7 @@ pub enum ServerCommand {
         character: Character,
     },
     #[serde(rename = "LIS")]
-    ListOnline { characters: Vec<CharacterData> },
+    ListOnline { characters: Vec<FlatCharacterData> },
     #[serde(rename = "NLN")]
     NewConnection {
         status: Status,
@@ -426,7 +426,7 @@ pub enum KinkResponsePart {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct CharacterData(pub Character, pub Gender, pub Status, pub String); // Last part is status message
+pub struct FlatCharacterData(pub Character, pub Gender, pub Status, pub String); // Last part is status message
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
 pub struct ChannelInfo {

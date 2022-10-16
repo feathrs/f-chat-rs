@@ -1,19 +1,19 @@
 #[test]
 fn server_command_deserialize() {
-    use crate::protocol::{parse_command, ServerCommand, CharacterData};
+    use crate::protocol::{parse_command, ServerCommand, FlatCharacterData};
     use crate::data::{Character, Gender, Status};
     // Taken straight from the Server Commands raw samples
     assert_eq!(
         parse_command(r#"LIS {"characters": [["Alexandrea", "Female", "online", ""], ["Fa Mulan", "Female", "busy", "Away, check out my new alt Aya Kinjou!"], ["Adorkable Lexi", "Female", "online", ""], ["Melfice Cyrum", "Male", "online", ""], ["Jenasys Stryphe", "Female", "online", ""], ["Cassie Hazel", "Herm", "looking", ""], ["Viol", "Cunt-boy", "looking", ""]]}"#),
         ServerCommand::ListOnline {
             characters: vec![
-                CharacterData(Character("Alexandrea".to_owned()), Gender::Female, Status::Online, "".to_owned()),
-                CharacterData(Character("Fa Mulan".to_owned()), Gender::Female, Status::Busy, "Away, check out my new alt Aya Kinjou!".to_owned()),
-                CharacterData(Character("Adorkable Lexi".to_owned()), Gender::Female, Status::Online, "".to_owned()),
-                CharacterData(Character("Melfice Cyrum".to_owned()), Gender::Male, Status::Online, "".to_owned()),
-                CharacterData(Character("Jenasys Stryphe".to_owned()), Gender::Female, Status::Online, "".to_owned()),
-                CharacterData(Character("Cassie Hazel".to_owned()), Gender::Herm, Status::Looking, "".to_owned()),
-                CharacterData(Character("Viol".to_owned()), Gender::CBoy, Status::Looking, "".to_owned()),
+                FlatCharacterData(Character("Alexandrea".to_owned()), Gender::Female, Status::Online, "".to_owned()),
+                FlatCharacterData(Character("Fa Mulan".to_owned()), Gender::Female, Status::Busy, "Away, check out my new alt Aya Kinjou!".to_owned()),
+                FlatCharacterData(Character("Adorkable Lexi".to_owned()), Gender::Female, Status::Online, "".to_owned()),
+                FlatCharacterData(Character("Melfice Cyrum".to_owned()), Gender::Male, Status::Online, "".to_owned()),
+                FlatCharacterData(Character("Jenasys Stryphe".to_owned()), Gender::Female, Status::Online, "".to_owned()),
+                FlatCharacterData(Character("Cassie Hazel".to_owned()), Gender::Herm, Status::Looking, "".to_owned()),
+                FlatCharacterData(Character("Viol".to_owned()), Gender::CBoy, Status::Looking, "".to_owned()),
             ]
         }
     )
