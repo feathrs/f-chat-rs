@@ -261,6 +261,7 @@ impl<T: EventListener> Client<T> {
             }
 
             // State updates (Characters)
+            /*
             ServerCommand::ProfileData { response_type, message, key, value } => {
                 // There's two ways to handle this:
                 // - Statefully, where the client tracks the start/end and issues a profile update at the end
@@ -275,6 +276,8 @@ impl<T: EventListener> Client<T> {
                     ProfileDataPart::End => {}
                 }
             }
+            */
+
 
             _ => eprintln!("Unhandled server command {event:?}")
         }
