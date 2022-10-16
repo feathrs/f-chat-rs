@@ -315,7 +315,7 @@ pub enum ServerCommand {
     Ignore {
         action: IgnoreAction,
         #[serde(default)]
-        characters: Vec<String>,
+        characters: Vec<Character>,
         #[serde(default)]
         character: Character,
     }, // Thanks, F-List. 'Characters' only when init/list

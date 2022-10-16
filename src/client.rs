@@ -13,7 +13,7 @@
 
 use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet, BTreeMap}};
 use bimap::BiBTreeMap;
-use dashmap::DashMap;
+use dashmap::{DashMap, DashSet};
 use parking_lot::{RwLock, Mutex};
 use thiserror::Error;
 
@@ -43,13 +43,16 @@ pub struct Client<T: EventListener> {
     // Own account data
     pub own_characters: BiBTreeMap<Character, CharacterId>,
     pub bookmarks: Vec<Bookmark>,
-    pub friends: Vec<Friend>,
+    pub friends: RwLock<Vec<Character>>,
 
     // Global data
     // I am using DashMap because I don't want to deal with locking, but this might be better as a BTreeMap
     // if I feel like handling locking myself at some point.
     pub channel_data: DashMap<Channel, ChannelData>,
     pub character_data: DashMap<Character, CharacterData>,
+    pub admins: RwLock<Vec<Character>>,
+    pub ignorelist: RwLock<Vec<Character>>,
+    pub global_channels: DashSet<Channel>,
 
     sessions: RwLock<Vec<Arc<Session>>>,
     send_channel: Sender<Event>,
@@ -138,17 +141,20 @@ impl<T: EventListener> Client<T> {
 
             own_characters: BiBTreeMap::new(),
             bookmarks: Vec::new(),
-            friends: Vec::new(),
+            friends: Default::default(),
 
             channel_data: DashMap::new(),
             character_data: DashMap::new(),
+            admins: Default::default(),
+            ignorelist: Default::default(),
+            global_channels: DashSet::new(),
 
             sessions: RwLock::new(Vec::new()),
             send_channel: send,
             rcv_channel: AsyncMutex::new(rcv),
 
 
-            event_listener
+            event_listener,
         }
     }
 
@@ -159,7 +165,9 @@ impl<T: EventListener> Client<T> {
 
         self.own_characters = ticket.characters.drain().collect();
         self.bookmarks = ticket.bookmarks;
-        self.friends = ticket.friends;
+        // This function should probably return this value and clone-map it into friends instead
+        // Friend data is repopulated when a session is started.
+        self.friends = RwLock::new(ticket.friends.drain(..).map(|f|f.dest).collect());
 
         Ok(())
     }
@@ -295,7 +303,49 @@ impl<T: EventListener> Client<T> {
                         status_message: character.3,
                     });
                 }
-            }
+            },
+            ServerCommand::NewConnection { status, gender, identity } => {
+                self.character_data.insert(identity, CharacterData {
+                    gender, status, status_message: "".to_owned()
+                });
+            },
+            ServerCommand::Offline { character } => {
+                // This could instead just *remove* the character.
+                // But that would get rid of the latent gender information
+                // Most people appear to expect to see None gender for Offline chars, but we can retain it.
+                self.character_data.entry(character).and_modify(|v| {
+                    v.status = Status::Offline;
+                    v.status_message = "".to_owned();
+                });
+            },
+            ServerCommand::Status { status, character, statusmsg } => {
+                self.character_data.entry(character).and_modify(|v| {
+                    v.status = status;
+                    v.status_message = statusmsg;
+                });
+            },
+
+            // State updates (global again)
+            ServerCommand::Friends { characters } => {
+                // This is just cheap to do, although arguably potentially incorrect.
+                *self.friends.write() = characters;
+            },
+            ServerCommand::GlobalOps { ops } => {
+                *self.admins.write() = ops;
+            },
+            ServerCommand::Ignore { action, characters, character } => {
+                match action {
+                    IgnoreAction::Init | IgnoreAction::List => *self.ignorelist.write() = characters,
+                    IgnoreAction::Add => self.ignorelist.write().push(character),
+                    IgnoreAction::Delete => self.ignorelist.write().retain(|v| *v!=character), 
+                    _ => println!("Unhandled ignore action {action:?} -- {characters:?} -- {character:?}")
+                }
+            },
+            ServerCommand::GlobalChannels { mut channels } => {
+                for channel in channels.drain(..) {
+                    self.global_channels.insert(channel);
+                }
+            },
 
             _ => eprintln!("Unhandled server command {event:?}")
         }
