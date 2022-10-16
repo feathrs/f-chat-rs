@@ -20,10 +20,20 @@ pub fn parse_command(command: &str) -> ServerCommand {
     // Split the command into the JSON data body and the command head
     let (head, data) = command.split_at(4);
     from_value(
-        to_value(CommandDummy {
-            command: head.trim().to_string(),
-            data: from_str(data).expect("Unable to parse data to Value"),
-        })
+        to_value(
+            if command.len() < 4 {
+                // If the command has no body.
+                CommandDummy {
+                    command: command.to_owned(), 
+                    data: Value::Null
+                }
+            } else {
+                CommandDummy {
+                    command: head.trim().to_string(),
+                    data: from_str(data).expect("Unable to parse data to Value"),
+                }
+            }
+        )
         .expect("Unable to convert CommandDummy to Value"),
     )
     .expect("Unable to convert Value to ServerCommand") // Forgive me, for I have sinned.
