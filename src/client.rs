@@ -19,7 +19,7 @@ use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
 use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as AsyncMutex}, task::JoinHandle};
-use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::Message};
+use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::{Message, protocol::WebSocketConfig}, connect_async_tls_with_config};
 use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
 
 use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel, ChannelMode}, protocol::*};
@@ -172,7 +172,7 @@ impl<T: EventListener> Client<T> {
 
     pub async fn connect(&self, character: Character) -> Result<JoinHandle<()>, ClientError> {
         self.refresh_fast().await?;
-        let (mut socket, _) = connect_async("wss://chat.f-list.net/chat2").await?;
+        let (mut socket, _) = connect_async_tls_with_config("wss://chat.f-list.net/chat2", None, None).await?;
         
         let ticket = self.ticket.read().ticket.clone();
         
@@ -209,7 +209,7 @@ impl<T: EventListener> Client<T> {
                         match ok.to_text() {
                             Err(err) => {eprintln!("Message frame is not text: {err:?}");},
                             Ok(text) => {
-                                let command = parse_command(dbg!(text));
+                                let command = parse_command(text);
                                 chan.send(Event {
                                     command,
                                     session

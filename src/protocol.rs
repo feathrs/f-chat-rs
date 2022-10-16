@@ -22,7 +22,7 @@ pub fn parse_command(command: &str) -> ServerCommand {
     from_value(
         to_value(CommandDummy {
             command: head.trim().to_string(),
-            data: from_str(data).expect("Unable to parse data to Value"),
+            data: from_str(dbg!(data)).expect("Unable to parse data to Value"),
         })
         .expect("Unable to convert CommandDummy to Value"),
     )
