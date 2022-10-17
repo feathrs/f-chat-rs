@@ -180,15 +180,16 @@ impl<T: EventListener> Client<T> {
     }
 
     pub async fn init(&mut self) -> Result<(), ClientError> {
-        let mut ticket = get_api_ticket(&self.http_client, &self.username, &self.password, true).await?;
+        let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, true).await?;
         self.ticket.write().update(ticket.ticket);
-        self.default_character = ticket.default_character;
+        let mut extra = ticket.extra.unwrap();
+        self.default_character = extra.default_character;
 
-        self.own_characters = ticket.characters.drain().collect();
-        self.bookmarks = ticket.bookmarks;
+        self.own_characters = extra.characters.drain().collect();
+        self.bookmarks = extra.bookmarks;
         // This function should probably return this value and clone-map it into friends instead
         // Friend data is repopulated when a session is started.
-        self.friends = RwLock::new(ticket.friends.drain(..).map(|f|f.dest).collect());
+        self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.dest).collect());
 
         Ok(())
     }

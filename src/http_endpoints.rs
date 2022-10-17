@@ -16,11 +16,17 @@ struct ApiTicketRequest<'a,'b> {
 
 #[derive(Deserialize, Debug)]
 pub struct ApiTicketResponse {
+    #[serde(flatten)]
+    pub extra: Option<TicketExtra>,
+    pub ticket: String
+}
+
+#[derive(Deserialize, Debug)]
+pub struct TicketExtra {
     pub bookmarks: Vec<Bookmark>,
     pub characters: HashMap<Character, CharacterId>,
     pub default_character: CharacterId,
     pub friends: Vec<Friend>,
-    pub ticket: String
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
