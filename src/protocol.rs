@@ -55,7 +55,7 @@ pub fn prepare_command(command: &ClientCommand) -> String {
 // Being a 3 character command code, followed by JSON data
 // This is fine.
 
-#[derive(Serialize, PartialEq, Debug)]
+#[derive(Serialize, PartialEq, Eq, Debug)]
 #[serde(tag = "command", content = "data")]
 pub enum ClientCommand {
     #[serde(rename = "ACB")]
@@ -498,16 +498,16 @@ pub enum IgnoreAction {
 #[serde(into="KinkIdExpanded")]
 #[serde(try_from="KinkIdExpanded")]
 pub struct KinkId(pub u32);
-impl Into<KinkIdExpanded> for KinkId {
-    fn into(self) -> KinkIdExpanded {
-        KinkIdExpanded::String(self.0.to_string())
+impl From<KinkId> for KinkIdExpanded {
+    fn from(val: KinkId) -> Self {
+        KinkIdExpanded::String(val.0.to_string())
     }
 }
 impl TryFrom<KinkIdExpanded> for KinkId {
     type Error = <u32 as FromStr>::Err;
     fn try_from(other: KinkIdExpanded) -> Result<KinkId, Self::Error> {
         match other {
-            KinkIdExpanded::String(val) => val.parse().map(|v| KinkId(v)),
+            KinkIdExpanded::String(val) => val.parse().map(KinkId),
             KinkIdExpanded::Number(val) => Ok(KinkId(val))
         }
     }
@@ -520,7 +520,8 @@ enum KinkIdExpanded {
     Number(u32)
 }
 
-#[derive(Debug)]
+#[derive(Debug, num_enum::FromPrimitive)]
+#[repr(i32)]
 pub enum ProtocolError {
     Success = 0, // Not an error.
     SytaxError = 1,
@@ -577,15 +578,8 @@ pub enum ProtocolError {
     UnknownError = -5,
     FrontpageDice = -10,
 
+    #[num_enum(default)]
     Other = 9999
-}
-
-impl From<i32> for ProtocolError {
-    fn from(id: i32) -> Self {
-        match id {
-            _ => Self::Other
-        }
-    }
 }
 
 impl ProtocolError {
@@ -602,19 +596,13 @@ impl ProtocolError {
         39: The user is being timed out from the server.
         40: The user is being kicked from the server.
         */
-        match self {
-            Self::FullServer | Self::Banned | Self::TooManySessions | Self::AnotherConnection | Self::InvalidAuthentication | Self::TimeOut | Self::Kick | Self::InternalError => true,
-            _ => false
-        }
+        matches!(self, Self::FullServer | Self::Banned | Self::TooManySessions | Self::AnotherConnection | Self::InvalidAuthentication | Self::TimeOut | Self::Kick | Self::InternalError)
     }
 
     /// The errors themselves do not literally contain messages, but they are often transmitted with messages.
     /// If an error object has a message, it means that the associated message is important and contains information about
     /// the specific error; the error is not statically associated with the ID, and has variables interpolated.
     pub fn has_message(&self) -> bool {
-        match self {
-            Self::Ignored | Self::TimeOut => true,
-            _ => false
-        }
+        matches!(self, Self::Ignored | Self::TimeOut)
     }
 }

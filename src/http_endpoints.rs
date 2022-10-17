@@ -38,7 +38,7 @@ pub struct Bookmark {
 pub async fn get_api_ticket(client: &Client, username: &str, password: &str, extra: bool) -> reqwest::Result<ApiTicketResponse> {
     let body = ApiTicketRequest {
         account: username,
-        password: password,
+        password,
         no_characters: StringBool(!extra),
         no_friends: StringBool(!extra),
         no_bookmarks: StringBool(!extra),
@@ -350,7 +350,7 @@ pub async fn get_character_guestbook<T: Into<CharacterRequest>>(client: &Client,
     let data = Authenticated {
         account, ticket,
         inner: CharacterGuestbookRequest {
-            page, character: character.into().into()
+            page, character: character.into()
         }
     };
     req_base(concat!("https://www.f-list.net", "/json/api/character-guestbook.php"), client, data).await

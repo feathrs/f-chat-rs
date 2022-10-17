@@ -6,9 +6,9 @@ macro_rules! stringable {
         #[serde(into=$pl)]
         #[serde(try_from=$pl)]
         pub struct $i(pub $t);
-        impl Into<$pi> for $i {
-            fn into(self) -> $pi {
-                $pi::String(self.0.to_string())
+        impl From<$i> for $pi {
+            fn from(v:$i) -> $pi {
+                $pi::String(v.0.to_string())
             }
         }
         impl TryFrom<$pi> for $i {
