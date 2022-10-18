@@ -183,7 +183,7 @@ impl<T: EventListener> Client<T> {
     }
 
     pub async fn init(&mut self) -> Result<(), ClientError> {
-        let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, true).await?;
+        let ticket = dbg!(get_api_ticket(&self.http_client, &self.username, &self.password, true).await?);
         self.ticket.write().update(ticket.ticket);
         let mut extra = ticket.extra.unwrap();
         self.default_character = extra.default_character;
