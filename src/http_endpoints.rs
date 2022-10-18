@@ -386,6 +386,7 @@ pub struct Friend {
     pub dest: Character,
     #[serde(default)]
     pub last_online: u64, // Seconds since last online -- Not timestamp of last online?
+    // Per testing, potentially even entirely useless. All results appear to be 0 for all characters.
     #[serde(alias="source_name")]
     pub source: Character
 }
