@@ -53,6 +53,7 @@ pub struct Client<T: EventListener> {
     pub admins: RwLock<Vec<Character>>,
     pub ignorelist: RwLock<Vec<Character>>,
     pub global_channels: DashSet<Channel>,
+    pub maybe_online: DashSet<Character>,
 
     sessions: RwLock<Vec<Arc<Session>>>,
     send_channel: Sender<Event>,
@@ -169,6 +170,7 @@ impl<T: EventListener> Client<T> {
             admins: Default::default(),
             ignorelist: Default::default(),
             global_channels: DashSet::new(),
+            maybe_online: DashSet::new(),
 
             sessions: RwLock::new(Vec::new()),
             send_channel: send,
@@ -189,6 +191,9 @@ impl<T: EventListener> Client<T> {
         self.bookmarks = extra.bookmarks;
         // This function should probably return this value and clone-map it into friends instead
         // Friend data is repopulated when a session is started.
+        for friend in extra.friends.iter().filter(|v| v.last_online < 600) {
+            self.maybe_online.insert(friend.source.clone());
+        }
         self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.source).collect());
 
         Ok(())
