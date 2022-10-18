@@ -189,7 +189,7 @@ impl<T: EventListener> Client<T> {
         self.bookmarks = extra.bookmarks;
         // This function should probably return this value and clone-map it into friends instead
         // Friend data is repopulated when a session is started.
-        self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.dest).collect());
+        self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.source).collect());
 
         Ok(())
     }
