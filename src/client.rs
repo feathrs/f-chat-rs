@@ -16,6 +16,7 @@ use bimap::BiBTreeMap;
 use dashmap::{DashMap, DashSet};
 use parking_lot::{RwLock, Mutex};
 use thiserror::Error;
+use itertools::Itertools;
 
 use reqwest::Client as ReqwestClient;
 use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as AsyncMutex}, task::JoinHandle};
@@ -194,7 +195,7 @@ impl<T: EventListener> Client<T> {
         for friend in extra.friends.iter().filter(|v| v.last_online < 600) {
             self.maybe_online.insert(friend.source.clone());
         }
-        self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.source).collect());
+        self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.source).sorted().dedup().collect());
 
         Ok(())
     }
