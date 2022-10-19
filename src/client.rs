@@ -14,19 +14,19 @@
 pub use async_trait::async_trait;
 use serde::Serialize;
 
-use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet, BTreeMap}};
+use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet}};
 use bimap::BiBTreeMap;
 use dashmap::{DashMap, DashSet};
-use parking_lot::{RwLock, Mutex};
+use parking_lot::RwLock;
 use thiserror::Error;
 use itertools::Itertools;
 
 use reqwest::Client as ReqwestClient;
 use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as AsyncMutex}, task::JoinHandle};
-use tokio_tungstenite::{connect_async, WebSocketStream, MaybeTlsStream, tungstenite::{Message, protocol::WebSocketConfig}, connect_async_tls_with_config};
-use futures_util::{SinkExt, StreamExt, stream::{SplitSink, SplitStream}};
+use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, tungstenite::Message, connect_async_tls_with_config};
+use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 
-use crate::{http_endpoints::{get_api_ticket, Bookmark, Friend}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*};
+use crate::{http_endpoints::get_api_ticket, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -58,7 +58,7 @@ pub struct Client<T: EventListener> {
     pub ignorelist: RwLock<Vec<Character>>,
     pub global_channels: DashSet<Channel>,
 
-    sessions: RwLock<Vec<Arc<Session>>>,
+    pub sessions: RwLock<Vec<Arc<Session>>>,
     send_channel: Sender<Event>,
     rcv_channel: AsyncMutex<Receiver<Event>>,
 
@@ -90,6 +90,26 @@ pub struct Variables {
 impl Session {
     pub async fn send(&self, command: ClientCommand) -> Result<(), ClientError> {
         Ok(self.write.lock().await.send(Message::Text(prepare_command(&command))).await?)
+    }
+
+    pub async fn send_message(&self, target: MessageTarget, message: String) -> Result<(), ClientError> {
+        self.send(match target {
+            MessageTarget::Broadcast => ClientCommand::Broadcast { message },
+            MessageTarget::Channel(channel) => ClientCommand::Message { channel, message },
+            MessageTarget::PrivateMessage(recipient) => ClientCommand::PrivateMessage { recipient, message } 
+        }).await
+    }
+
+    pub async fn send_dice(&self, target: MessageTarget, dice: String) -> Result<(), ClientError> {
+        self.send(match target {
+            MessageTarget::Broadcast => panic!("You can't broadcast dice!"), // Upstream invalid state. Implementor logic error.
+            MessageTarget::Channel(channel) => ClientCommand::Roll { target: Target::Channel { channel }, dice },
+            MessageTarget::PrivateMessage(recipient) => ClientCommand::Roll { target: Target::Character { recipient }, dice }
+        }).await
+    }
+
+    pub async fn join_channel(&self, channel: Channel) -> Result<(), ClientError> {
+        self.send(ClientCommand::JoinChannel { channel }).await
     }
 }
 
@@ -431,6 +451,7 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
 }
 
 #[async_trait]
+#[allow(unused_variables)]
 pub trait EventListener {
     async fn raw_error(&self, ctx: Arc<Session>, id: i32, message: &str) {
         // Map the ID to an appropriate known error type. Use enums.
@@ -446,12 +467,12 @@ pub trait EventListener {
     }
 
     // Maybe unimplemented!() for these?
-    async fn hello(&self, ctx: Arc<Session>, message: &str) {} 
-    async fn connected(&self, ctx: Arc<Session>, count: u32) {}
-    async fn ping(&self, ctx: Arc<Session>) {}
+    async fn hello(&self, _ctx: Arc<Session>, message: &str) {} 
+    async fn connected(&self, _ctx: Arc<Session>, count: u32) {}
+    async fn ping(&self, _ctx: Arc<Session>) {}
     async fn list_online(&self) {}
-    async fn message(&self, ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
-    async fn typing(&self, ctx: Arc<Session>, character: Character, status: TypingStatus) {}
+    async fn message(&self, _ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
+    async fn typing(&self, _ctx: Arc<Session>, character: Character, status: TypingStatus) {}
     async fn error() {}
 
     async fn updated_friends(&self) {} // No need to send anything optimistically; end user can read off client
