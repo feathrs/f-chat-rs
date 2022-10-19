@@ -370,8 +370,9 @@ pub enum ServerCommand {
     },
     #[serde(rename = "RLL")]
     Roll {
-        channel: Channel,
-        results: u32,
+        #[serde(flatten)]
+        target: Target,
+        results: Vec<u32>,
         #[serde(rename = "type")]
         response_type: String,
         rolls: Vec<String>,
@@ -444,7 +445,7 @@ pub enum Variable {
     IconBlacklist(Vec<Channel>),
 }
 
-#[derive(Serialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(untagged)]
 pub enum Target {
     Channel {channel: Channel},
