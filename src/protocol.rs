@@ -174,7 +174,11 @@ pub enum ClientCommand {
     #[serde(rename = "PRO")]
     ProfileTags { character: Character }, // Advised to use JSON endpoint
     #[serde(rename = "RLL")]
-    Roll { channel: Channel, dice: String },
+    Roll { 
+        #[serde(flatten)]
+        target: Target, 
+        dice: String 
+    },
     #[serde(rename = "RLD")]
     Reload { save: String }, // ???
     #[serde(rename = "RMO")]
@@ -438,6 +442,13 @@ pub enum Variable {
     StatusCooldown(f32),
     Permissions(String),
     IconBlacklist(Vec<Channel>),
+}
+
+#[derive(Serialize, Debug, Eq, PartialEq, Clone)]
+#[serde(untagged)]
+pub enum Target {
+    Channel {channel: Channel},
+    Character {recipient: Character}
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
