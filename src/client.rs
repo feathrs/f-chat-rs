@@ -97,7 +97,7 @@ struct Event {
 }
 
 /// Full channel data; everything that describes the channel, inc. members.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct ChannelData {
     channel_mode: ChannelMode,
     members: BTreeSet<Character>,
@@ -106,7 +106,7 @@ pub struct ChannelData {
 
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct CharacterData {
     pub gender: Gender,
     pub status: Status,
@@ -247,6 +247,8 @@ impl<T: EventListener> Client<T> {
             async move {
                 match res {
                     Err(err) => {eprintln!("Error when reading from session: {err:?}");},
+                    // Error when reading from session: Protocol(ResetWithoutClosingHandshake)
+                    // Consider: Recording the last ERR sent by the server, and switching on that. Reconnect if not fatal?
                     Ok(ok) => {
                         match ok.to_text() {
                             Err(err) => {eprintln!("Message frame is not text: {err:?}");},
@@ -297,26 +299,31 @@ impl<T: EventListener> Client<T> {
                 // CharacterIdentity is just Character, but structurally different because F-Chat.
                 // Turn it into Character when storing it.
                 // Maybe later can transmute if I promise they have the same memory layout (transparent String)
-                let mut entry = self.channel_data.entry(channel).or_default();
+                let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.channel_mode = mode;
                 entry.members = users.drain(..).map(|v|v.identity).collect();
+                self.event_listener.updated_channel(channel);
             },
             ServerCommand::ChannelDescription { channel, description } => {
-                let mut entry = self.channel_data.entry(channel).or_default();
+                let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.description = description;
+                self.event_listener.updated_channel(channel);
             }
             ServerCommand::ChannelMode { mode, channel } => {
-                let mut entry = self.channel_data.entry(channel).or_default();
+                let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.channel_mode = mode;
+                self.event_listener.updated_channel(channel);
             }
             ServerCommand::JoinedChannel { channel, character, title } => {
-                let mut entry = self.channel_data.entry(channel).or_default();
+                let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.title = title;
                 entry.members.insert(character.identity);
+                self.event_listener.updated_channel(channel);
             }
             ServerCommand::LeftChannel { channel, character } => {
-                let mut entry = self.channel_data.entry(channel).or_default();
+                let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.members.remove(&character);
+                self.event_listener.updated_channel(channel);
             }
             // If you think about it, typing is just a state update for a PM channel. Sort of.
             ServerCommand::Typing { character, status } => {
@@ -350,26 +357,33 @@ impl<T: EventListener> Client<T> {
                         status_message: character.3,
                     });
                 }
+                // No, I refuse to emit an event for every character here.
+                // Instead, I'll later work out the order the server sends messages and have an "ok we're done"
+                self.event_listener.list_online()
             },
             ServerCommand::NewConnection { status, gender, identity } => {
-                self.character_data.insert(identity, CharacterData {
+                let data = CharacterData {
                     gender, status, status_message: "".to_owned()
-                });
+                };
+                self.character_data.insert(identity.clone(), data);
+                self.event_listener.updated_character(identity);
             },
             ServerCommand::Offline { character } => {
                 // This could instead just *remove* the character.
                 // But that would get rid of the latent gender information
                 // Most people appear to expect to see None gender for Offline chars, but we can retain it.
-                self.character_data.entry(character).and_modify(|v| {
+                self.character_data.entry(character.clone()).and_modify(|v| {
                     v.status = Status::Offline;
                     v.status_message = "".to_owned();
                 });
+                self.event_listener.updated_character(character);
             },
             ServerCommand::Status { status, character, statusmsg } => {
-                self.character_data.entry(character).and_modify(|v| {
+                self.character_data.entry(character.clone()).and_modify(|v| {
                     v.status = status;
                     v.status_message = statusmsg;
                 });
+                self.event_listener.updated_character(character);
             },
 
             // State updates (global again)
@@ -431,9 +445,16 @@ pub trait EventListener {
     fn hello(&self, ctx: Arc<Session>, message: &str) {} 
     fn connected(&self, ctx: Arc<Session>, count: u32) {}
     fn ping(&self, ctx: Arc<Session>) {}
+    fn list_online(&self) {}
     fn message(&self, ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
     fn typing(&self, ctx: Arc<Session>, character: Character, status: TypingStatus) {}
     fn error() {}
+
+    fn updated_friends(&self) {} // No need to send anything optimistically; end user can read off client
+    fn updated_bookmarks(&self) {} // Ditto for bookmarks, although I'm unsure how it behaves...
+    fn updated_channel(&self, channel: Channel) {} // Don't send the new data, because we don't track old data.
+    fn updated_character(&self, user: Character) {} 
+
 }
 
 // Oh, and let's introduce a variety of non-protocol abstractions, to unify the client abstraction.
