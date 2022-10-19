@@ -58,7 +58,7 @@ pub struct Client<T: EventListener> {
     pub ignorelist: RwLock<Vec<Character>>,
     pub global_channels: DashSet<Channel>,
 
-    pub sessions: RwLock<Vec<Arc<Session>>>,
+    sessions: RwLock<Vec<Arc<Session>>>,
     send_channel: Sender<Event>,
     rcv_channel: AsyncMutex<Receiver<Event>>,
 
@@ -286,6 +286,10 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
                 };
             }
         })))
+    }
+
+    pub fn get_session(&self, session: Character) -> Option<Arc<Session>> {
+        self.sessions.read().iter().find(|this_session| this_session.character == session).map(|s|s.clone())
     }
 
     async fn dispatch(&self, event: Event) {
