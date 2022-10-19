@@ -12,6 +12,7 @@
 // I should also use async locks if contention is high or leases are long.
 
 pub use async_trait::async_trait;
+use serde::Serialize;
 
 use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet, BTreeMap}};
 use bimap::BiBTreeMap;
@@ -99,16 +100,15 @@ struct Event {
 }
 
 /// Full channel data; everything that describes the channel, inc. members.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct ChannelData {
     channel_mode: ChannelMode,
     members: BTreeSet<Character>,
     description: String,
     title: String,
-
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct CharacterData {
     pub gender: Gender,
     pub status: Status,
