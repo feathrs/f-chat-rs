@@ -288,7 +288,7 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
         })))
     }
 
-    pub fn get_session(&self, session: Character) -> Option<Arc<Session>> {
+    pub fn get_session(&self, session: &Character) -> Option<Arc<Session>> {
         self.sessions.read().iter().find(|this_session| this_session.character == session).map(|s|s.clone())
     }
 
