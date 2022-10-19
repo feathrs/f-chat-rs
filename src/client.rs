@@ -46,7 +46,7 @@ pub struct Client<T: EventListener> {
     // For now, however, I need to understand how I'm using the data.
     // Own account data
     pub own_characters: BiBTreeMap<Character, CharacterId>,
-    pub bookmarks: Vec<Bookmark>,
+    pub bookmarks: Vec<Character>,
     pub friends: RwLock<Vec<Character>>,
 
     // Global data
@@ -189,7 +189,7 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
         self.default_character = extra.default_character;
 
         self.own_characters = extra.characters.drain().collect();
-        self.bookmarks = extra.bookmarks;
+        self.bookmarks = extra.bookmarks.drain(..).map(|c|c.name).collect();
         // This function should probably return this value and clone-map it into friends instead
         // Friend data is repopulated when a session is started.
         self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.source).sorted().dedup().collect());
