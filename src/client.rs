@@ -11,6 +11,8 @@
 // Otherwise, I should use the locks from Tokio, or I can cause a deadlock.
 // I should also use async locks if contention is high or leases are long.
 
+pub use async_trait::async_trait;
+
 use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet, BTreeMap}};
 use bimap::BiBTreeMap;
 use dashmap::{DashMap, DashSet};
@@ -148,7 +150,7 @@ impl Token {
     }
 }
 
-impl<T: EventListener> Client<T> {
+impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
     pub fn new(username: String, password: String, client_name: String, client_version: String, event_listener: T) -> Client<T> {
         let http = ReqwestClient::new();
         let (send, rcv) = channel(8);
@@ -269,9 +271,9 @@ impl<T: EventListener> Client<T> {
     async fn dispatch(&self, event: Event) {
         match event.command {
             ServerCommand::IdentifySuccess { character } => assert_eq!(event.session.character, character),
-            ServerCommand::Hello {message} => self.event_listener.hello(event.session, &message),
-            ServerCommand::Error {number, message} => self.event_listener.raw_error(event.session, number, &message),
-            ServerCommand::Connected { count } => self.event_listener.connected(event.session, count),
+            ServerCommand::Hello {message} => self.event_listener.hello(event.session, &message).await,
+            ServerCommand::Error {number, message} => self.event_listener.raw_error(event.session, number, &message).await,
+            ServerCommand::Connected { count } => self.event_listener.connected(event.session, count).await,
 
             // Variables init
             ServerCommand::Variable(var) => {
@@ -289,10 +291,10 @@ impl<T: EventListener> Client<T> {
             }
 
             // Messages
-            ServerCommand::Broadcast { message, character } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Broadcast, &message),
-            ServerCommand::Message { character, message, channel } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Channel(channel), &message),
-            ServerCommand::PrivateMessage { character, message } => self.event_listener.message(event.session, &MessageSource::Character(character.clone()), &MessageTarget::PrivateMessage(character), &message),
-            ServerCommand::SystemMessage { message, channel } => self.event_listener.message(event.session, &MessageSource::System, &MessageTarget::Channel(channel), &message),
+            ServerCommand::Broadcast { message, character } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Broadcast, &message).await,
+            ServerCommand::Message { character, message, channel } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Channel(channel), &message).await,
+            ServerCommand::PrivateMessage { character, message } => self.event_listener.message(event.session, &MessageSource::Character(character.clone()), &MessageTarget::PrivateMessage(character), &message).await,
+            ServerCommand::SystemMessage { message, channel } => self.event_listener.message(event.session, &MessageSource::System, &MessageTarget::Channel(channel), &message).await,
 
             // State updates (Channels)
             ServerCommand::ChannelData { mut users, channel, mode } => {
@@ -302,33 +304,33 @@ impl<T: EventListener> Client<T> {
                 let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.channel_mode = mode;
                 entry.members = users.drain(..).map(|v|v.identity).collect();
-                self.event_listener.updated_channel(channel);
+                self.event_listener.updated_channel(channel).await;
             },
             ServerCommand::ChannelDescription { channel, description } => {
                 let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.description = description;
-                self.event_listener.updated_channel(channel);
+                self.event_listener.updated_channel(channel).await;
             }
             ServerCommand::ChannelMode { mode, channel } => {
                 let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.channel_mode = mode;
-                self.event_listener.updated_channel(channel);
+                self.event_listener.updated_channel(channel).await;
             }
             ServerCommand::JoinedChannel { channel, character, title } => {
                 let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.title = title;
                 entry.members.insert(character.identity);
-                self.event_listener.updated_channel(channel);
+                self.event_listener.updated_channel(channel).await;
             }
             ServerCommand::LeftChannel { channel, character } => {
                 let mut entry = self.channel_data.entry(channel.clone()).or_default();
                 entry.members.remove(&character);
-                self.event_listener.updated_channel(channel);
+                self.event_listener.updated_channel(channel).await;
             }
             // If you think about it, typing is just a state update for a PM channel. Sort of.
             ServerCommand::Typing { character, status } => {
                 event.session.pms.insert(character.clone(), status);
-                self.event_listener.typing(event.session, character, status);
+                self.event_listener.typing(event.session, character, status).await;
             }
 
             // State updates (Characters)
@@ -359,14 +361,14 @@ impl<T: EventListener> Client<T> {
                 }
                 // No, I refuse to emit an event for every character here.
                 // Instead, I'll later work out the order the server sends messages and have an "ok we're done"
-                self.event_listener.list_online()
+                self.event_listener.list_online().await;
             },
             ServerCommand::NewConnection { status, gender, identity } => {
                 let data = CharacterData {
                     gender, status, status_message: "".to_owned()
                 };
                 self.character_data.insert(identity.clone(), data);
-                self.event_listener.updated_character(identity);
+                self.event_listener.updated_character(identity).await;
             },
             ServerCommand::Offline { character } => {
                 // This could instead just *remove* the character.
@@ -376,20 +378,21 @@ impl<T: EventListener> Client<T> {
                     v.status = Status::Offline;
                     v.status_message = "".to_owned();
                 });
-                self.event_listener.updated_character(character);
+                self.event_listener.updated_character(character).await;
             },
             ServerCommand::Status { status, character, statusmsg } => {
                 self.character_data.entry(character.clone()).and_modify(|v| {
                     v.status = status;
                     v.status_message = statusmsg;
                 });
-                self.event_listener.updated_character(character);
+                self.event_listener.updated_character(character).await;
             },
 
             // State updates (global again)
             ServerCommand::Friends { characters } => {
                 // This is just cheap to do, although arguably potentially incorrect.
                 *self.friends.write() = characters;
+                self.event_listener.updated_friends().await;
             },
             ServerCommand::GlobalOps { ops } => {
                 *self.admins.write() = ops;
@@ -411,7 +414,7 @@ impl<T: EventListener> Client<T> {
             // Ping
             ServerCommand::Ping => {
                 event.session.send(ClientCommand::Pong).await.expect("Failed to Pong!");
-                self.event_listener.ping(event.session);
+                self.event_listener.ping(event.session).await;
             }
 
             _ => eprintln!("Unhandled server command {event:?}")
@@ -427,8 +430,9 @@ impl<T: EventListener> Client<T> {
     }
 }
 
+#[async_trait]
 pub trait EventListener {
-    fn raw_error(&self, ctx: Arc<Session>, id: i32, message: &str) {
+    async fn raw_error(&self, ctx: Arc<Session>, id: i32, message: &str) {
         // Map the ID to an appropriate known error type. Use enums.
         let err: ProtocolError = id.into();
         if err.is_fatal() {
@@ -442,18 +446,18 @@ pub trait EventListener {
     }
 
     // Maybe unimplemented!() for these?
-    fn hello(&self, ctx: Arc<Session>, message: &str) {} 
-    fn connected(&self, ctx: Arc<Session>, count: u32) {}
-    fn ping(&self, ctx: Arc<Session>) {}
-    fn list_online(&self) {}
-    fn message(&self, ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
-    fn typing(&self, ctx: Arc<Session>, character: Character, status: TypingStatus) {}
-    fn error() {}
+    async fn hello(&self, ctx: Arc<Session>, message: &str) {} 
+    async fn connected(&self, ctx: Arc<Session>, count: u32) {}
+    async fn ping(&self, ctx: Arc<Session>) {}
+    async fn list_online(&self) {}
+    async fn message(&self, ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
+    async fn typing(&self, ctx: Arc<Session>, character: Character, status: TypingStatus) {}
+    async fn error() {}
 
-    fn updated_friends(&self) {} // No need to send anything optimistically; end user can read off client
-    fn updated_bookmarks(&self) {} // Ditto for bookmarks, although I'm unsure how it behaves...
-    fn updated_channel(&self, channel: Channel) {} // Don't send the new data, because we don't track old data.
-    fn updated_character(&self, user: Character) {} 
+    async fn updated_friends(&self) {} // No need to send anything optimistically; end user can read off client
+    async fn updated_bookmarks(&self) {} // Ditto for bookmarks, although I'm unsure how it behaves...
+    async fn updated_channel(&self, channel: Channel) {} // Don't send the new data, because we don't track old data.
+    async fn updated_character(&self, user: Character) {} 
 
 }
 
