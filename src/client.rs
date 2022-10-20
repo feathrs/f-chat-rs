@@ -292,6 +292,10 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
         self.sessions.read().iter().find(|this_session| this_session.character == *session).map(|s|s.clone())
     }
 
+    pub fn get_sessions(&self) -> Vec<Arc<Session>> {
+        self.sessions.read().clone()
+    }
+
     async fn dispatch(&self, event: Event) {
         match event.command {
             ServerCommand::IdentifySuccess { character } => assert_eq!(event.session.character, character),
