@@ -158,7 +158,7 @@ impl Token {
     fn zero() -> Token {
         Token {
             ticket: "NONE".to_owned(),
-            last_updated: Instant::now() - Duration::from_secs(60*60) // Pretend that the last ticket was an hour ago.
+            last_updated: Instant::now() // Good luck.
         }
     }
     fn expired(&self) -> bool {
@@ -204,7 +204,7 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
 
     pub async fn init(&mut self) -> Result<(), ClientError> {
         let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, true).await?;
-        self.ticket.write().update(ticket.ticket);
+        *self.ticket.write() = Token::new(ticket.ticket);
         let mut extra = ticket.extra.unwrap();
         self.default_character = extra.default_character;
 
