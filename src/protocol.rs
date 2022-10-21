@@ -385,8 +385,8 @@ pub enum ServerCommand {
     #[serde(rename = "RTB")]
     BridgeEvent {
         #[serde(rename = "type")]
-        response_type: String,
-        character: Character,
+        response_type: BridgeEvent,
+        name: Character,
     },
     #[serde(rename = "SFC")]
     Report {
@@ -504,6 +504,21 @@ pub enum IgnoreAction {
     Notify,
     List,
     Init,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
+#[serde(rename_all = "lowercase")]
+pub enum BridgeEvent {
+    #[serde(rename="trackadd")]
+    BookmarkAdd,
+    #[serde(rename="trackrem")]
+    BookmarkRemove,
+    #[serde(rename="friendadd")]
+    FriendAdd,
+    #[serde(rename="friendremove")]
+    FriendRemove,
+    #[serde(rename="friendrequest")]
+    FriendRequest
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]

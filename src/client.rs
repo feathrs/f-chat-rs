@@ -26,7 +26,7 @@ use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as A
 use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, tungstenite::Message, connect_async_tls_with_config};
 use futures_util::{SinkExt, StreamExt, stream::SplitSink};
 
-use crate::{http_endpoints::get_api_ticket, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*};
+use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
@@ -46,8 +46,8 @@ pub struct Client<T: EventListener> {
     // For now, however, I need to understand how I'm using the data.
     // Own account data
     pub own_characters: BiBTreeMap<Character, CharacterId>,
-    pub bookmarks: Vec<Character>,
-    pub friends: RwLock<Vec<Character>>,
+    pub bookmarks: DashSet<Character>,
+    pub friends: DashSet<Character>,
 
     // Global data
     // I am using DashMap because I don't want to deal with locking, but this might be better as a BTreeMap
@@ -184,7 +184,7 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
             default_character: CharacterId(0),
 
             own_characters: BiBTreeMap::new(),
-            bookmarks: Vec::new(),
+            bookmarks: Default::default(),
             friends: Default::default(),
 
             channel_data: DashMap::new(),
@@ -212,7 +212,7 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
         self.bookmarks = extra.bookmarks.drain(..).map(|c|c.name).collect();
         // This function should probably return this value and clone-map it into friends instead
         // Friend data is repopulated when a session is started.
-        self.friends = RwLock::new(extra.friends.drain(..).map(|f|f.source).sorted().dedup().collect());
+        self.friends = extra.friends.drain(..).map(|f|f.source).collect();
 
         Ok(())
     }
@@ -417,11 +417,45 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
             },
 
             // State updates (global again)
-            ServerCommand::Friends { characters } => {
-                // This is just cheap to do, although arguably potentially incorrect.
-                *self.friends.write() = characters;
-                self.event_listener.updated_friends().await;
+            ServerCommand::Friends { .. } => {
+                // N.B. it looks like FRL includes bookmarks, so... Ignore this one's data. Entirely.
+                // There's no point in using it because I already populate friends/bookmarks on init.
             },
+            ServerCommand::BridgeEvent { response_type, name } => {
+                match response_type {
+                    BridgeEvent::BookmarkAdd => {
+                        self.bookmarks.insert(name);
+                        self.event_listener.updated_bookmarks().await;
+                    },
+                    BridgeEvent::BookmarkRemove => {
+                        self.bookmarks.remove(&name);
+                        self.event_listener.updated_bookmarks().await;
+                    },
+                    BridgeEvent::FriendAdd => {
+                        self.friends.insert(name);
+                        self.event_listener.updated_friends().await;
+                    },
+                    BridgeEvent::FriendRemove => {
+                        // Ohoho, you didn't think it would be that easy, did you?
+                        // You can have multiple friend-relations
+                        // And whilst F-Chat-proper forgets this and falls out of sync,
+                        // I'm not that stupid.
+                        self.refresh_fast().await.expect("Failed to get new token (RTB FriendRemove)");
+                        // Later move this into client-proper and force it to update all states it gets
+                        let friends = get_friends_list(
+                            &self.http_client, 
+                            &self.ticket.read().ticket,
+                            &self.username
+                        ).await.expect("Failed to get friends list");
+                        self.friends.clear();
+                        self.friends.extend(friends.inner.friends.drain(..).map(|f|f.source));
+                        self.event_listener.updated_friends().await;
+                    },
+                    BridgeEvent::FriendRequest => {
+                        eprintln!("Not handling RTB FriendRequest");
+                    }
+                }
+            }
             ServerCommand::GlobalOps { ops } => {
                 *self.admins.write() = ops;
             },
