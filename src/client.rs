@@ -19,12 +19,11 @@ use bimap::BiBTreeMap;
 use dashmap::{DashMap, DashSet};
 use parking_lot::RwLock;
 use thiserror::Error;
-use itertools::Itertools;
 
 use reqwest::Client as ReqwestClient;
 use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as AsyncMutex}, task::JoinHandle};
 use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, tungstenite::Message, connect_async_tls_with_config};
-use futures_util::{SinkExt, StreamExt, stream::SplitSink};
+use futures_util::{SinkExt, StreamExt, stream::SplitSink, join};
 
 use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*};
 
@@ -93,11 +92,21 @@ impl Session {
     }
 
     pub async fn send_message(&self, target: MessageTarget, message: String) -> Result<(), ClientError> {
-        self.send(match target {
-            MessageTarget::Broadcast => ClientCommand::Broadcast { message },
-            MessageTarget::Channel(channel) => ClientCommand::Message { channel, message },
-            MessageTarget::PrivateMessage(recipient) => ClientCommand::PrivateMessage { recipient, message } 
-        }).await
+        match target {
+            MessageTarget::Broadcast => self.send(ClientCommand::Broadcast { message }).await?,
+            MessageTarget::Channel(channel) => self.send(ClientCommand::Message { channel, message }).await?,
+            MessageTarget::PrivateMessage(recipient) => {
+                let (ra, rb) = join!(
+                    self.send(ClientCommand::PrivateMessage { recipient: recipient.clone(), message }),
+                    self.send(ClientCommand::Typing {
+                        character: recipient,
+                        status: TypingStatus::Clear
+                    })
+                );
+                return ra.and(rb);
+            }
+        };
+        Ok(())
     }
 
     pub async fn send_dice(&self, target: MessageTarget, dice: String) -> Result<(), ClientError> {

@@ -17,5 +17,5 @@ futures-util = "^0.3"
 parking_lot = "^0.12" # Synchronization primitives, faster* than default Rust sync primitives
 dashmap = "^5.4" # I can't be bothered to handle locking manually.
 num_enum = "^0.5" # For handling rt protocol errors
-itertools = "^0.10" # For dealing with iterators.
+# itertools = "^0.10" # For dealing with iterators.
 async-trait = "^0.1" # For EventListener
