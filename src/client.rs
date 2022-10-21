@@ -450,14 +450,17 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
                         // And whilst F-Chat-proper forgets this and falls out of sync,
                         // I'm not that stupid.
                         self.refresh_fast().await.expect("Failed to get new token (RTB FriendRemove)");
+                        let ticket = self.ticket.read().ticket.clone();
                         // Later move this into client-proper and force it to update all states it gets
-                        let friends = get_friends_list(
+                        let mut friends = get_friends_list(
                             &self.http_client, 
-                            &self.ticket.read().ticket,
+                            &ticket,
                             &self.username
                         ).await.expect("Failed to get friends list");
                         self.friends.clear();
-                        self.friends.extend(friends.inner.friends.drain(..).map(|f|f.source));
+                        for v in friends.inner.friends.drain(..) {
+                            self.friends.insert(v.source);
+                        }
                         self.event_listener.updated_friends().await;
                     },
                     BridgeEvent::FriendRequest => {
