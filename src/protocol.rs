@@ -1,4 +1,4 @@
-use crate::data::*;
+use crate::{data::*, util::timestamp::Timestamp};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, from_value, to_value, to_writer, Value};
 use std::{io::Write as _, str::FromStr};
@@ -393,7 +393,7 @@ pub enum ServerCommand {
         action: String,
         moderator: Character,
         character: Character,
-        timestamp: String,
+        timestamp: String, // Poorly documented...
         callid: u32,
         report: String,
         logid: u32,
@@ -413,8 +413,10 @@ pub enum ServerCommand {
     },
     #[serde(rename = "UPT")]
     Uptime {
-        time: u64,
-        starttime: u64,
+        #[serde(with = "crate::util::timestamp")]
+        time: Timestamp,
+        #[serde(with = "crate::util::timestamp")]
+        starttime: Timestamp,
         startstring: String,
         accepted: u64,
         channels: u32,

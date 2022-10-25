@@ -25,12 +25,12 @@ use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as A
 use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, tungstenite::Message, connect_async_tls_with_config};
 use futures_util::{SinkExt, StreamExt, stream::SplitSink, join};
 
-use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*};
+use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*, cache::{Cache, NoCache}};
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 #[derive(Debug)]
-pub struct Client<T: EventListener> {
+pub struct Client<T: EventListener, C: Cache> {
     client_name: String,
     client_version: String,
 
@@ -39,6 +39,8 @@ pub struct Client<T: EventListener> {
     ticket: RwLock<Token>,
     http_client: ReqwestClient,
     default_character: CharacterId,
+
+    cache: C,
 
     // It might later be sane to move this into a specialized cache/state structure
     // That way I can hide the implementation of the caching from consumers.
@@ -128,22 +130,6 @@ struct Event {
     command: ServerCommand
 }
 
-/// Full channel data; everything that describes the channel, inc. members.
-#[derive(Debug, Default, Clone, Serialize)]
-pub struct ChannelData {
-    channel_mode: ChannelMode,
-    members: BTreeSet<Character>,
-    description: String,
-    title: String,
-}
-
-#[derive(Debug, Default, Clone, Serialize)]
-pub struct CharacterData {
-    pub gender: Gender,
-    pub status: Status,
-    pub status_message: String,
-}
-
 #[derive(Error, Debug)]
 pub enum ClientError {
     #[error("Error from HTTP Request")]
@@ -179,8 +165,8 @@ impl Token {
     }
 }
 
-impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
-    pub fn new(username: String, password: String, client_name: String, client_version: String, event_listener: T) -> Client<T> {
+impl<T: EventListener + std::marker::Sync + Sized> Client<T, NoCache> {
+    pub fn new(username: String, password: String, client_name: String, client_version: String, event_listener: T) -> Client<T, NoCache> {
         let http = ReqwestClient::new();
         let (send, rcv) = channel(8);
         Client {
@@ -206,7 +192,7 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T> {
             send_channel: send,
             rcv_channel: AsyncMutex::new(rcv),
 
-
+            cache: NoCache,
             event_listener,
         }
     }

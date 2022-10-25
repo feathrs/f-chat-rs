@@ -6,6 +6,8 @@ pub mod data;
 pub mod protocol;
 pub mod client;
 pub mod http_endpoints;
+pub mod cache;
+pub mod session;
 
 #[cfg(test)]
 mod tests;

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::stringable;
+use crate::{stringable, util::StackString};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "PascalCase")]
@@ -175,9 +175,9 @@ pub enum KinkInterest {
 // No default impl for KinkInterest because it's not sane; unlisted kinks should never be in a collection.
 
 // Strong typing for string IDs
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct Channel(pub String);
-#[derive(Serialize, Deserialize, Default, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct Character(pub String);
+#[derive(Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct Channel(pub StackString<20>);
+#[derive(Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct Character(pub StackString<20>);
 
 stringable!(CharacterId: u64, CharacterIdProxy, "CharacterIdProxy");
