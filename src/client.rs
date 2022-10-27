@@ -27,8 +27,6 @@ use futures_util::{SinkExt, StreamExt, stream::SplitSink, join};
 
 use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*, cache::{Cache, NoCache}};
 
-type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
-
 #[derive(Debug)]
 pub struct Client<T: EventListener, C: Cache> {
     client_name: String,
@@ -75,59 +73,6 @@ pub struct Session {
     pub variables: RwLock<Variables>,
 
     write: AsyncMutex<SplitSink<Socket, Message>>
-}
-
-#[derive(Debug, Default)]
-pub struct Variables {
-    pub chat_max: u32,
-    pub priv_max: u32,
-    pub ad_max: u32,
-    pub chat_cooldown: f32,
-    pub ad_cooldown: f32,
-    pub status_cooldown: f32,
-    pub icon_blacklist: Vec<Channel>,
-}
-
-impl Session {
-    pub async fn send(&self, command: ClientCommand) -> Result<(), ClientError> {
-        Ok(self.write.lock().await.send(Message::Text(prepare_command(&command))).await?)
-    }
-
-    pub async fn send_message(&self, target: MessageTarget, message: String) -> Result<(), ClientError> {
-        match target {
-            MessageTarget::Broadcast => self.send(ClientCommand::Broadcast { message }).await?,
-            MessageTarget::Channel(channel) => self.send(ClientCommand::Message { channel, message }).await?,
-            MessageTarget::PrivateMessage(recipient) => {
-                let (ra, rb) = join!(
-                    self.send(ClientCommand::PrivateMessage { recipient: recipient.clone(), message }),
-                    self.send(ClientCommand::Typing {
-                        character: recipient,
-                        status: TypingStatus::Clear
-                    })
-                );
-                return ra.and(rb);
-            }
-        };
-        Ok(())
-    }
-
-    pub async fn send_dice(&self, target: MessageTarget, dice: String) -> Result<(), ClientError> {
-        self.send(match target {
-            MessageTarget::Broadcast => panic!("You can't broadcast dice!"), // Upstream invalid state. Implementor logic error.
-            MessageTarget::Channel(channel) => ClientCommand::Roll { target: Target::Channel { channel }, dice },
-            MessageTarget::PrivateMessage(recipient) => ClientCommand::Roll { target: Target::Character { recipient }, dice }
-        }).await
-    }
-
-    pub async fn join_channel(&self, channel: Channel) -> Result<(), ClientError> {
-        self.send(ClientCommand::JoinChannel { channel }).await
-    }
-}
-
-#[derive(Debug)]
-struct Event {
-    session: Arc<Session>,
-    command: ServerCommand
 }
 
 #[derive(Error, Debug)]
@@ -228,9 +173,6 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T, NoCache> {
     }
 
     pub async fn connect(&self, character: Character) -> Result<JoinHandle<()>, ClientError> {
-        self.refresh_fast().await?;
-        let (mut socket, _) = connect_async_tls_with_config("wss://chat.f-list.net/chat2", None, None).await?;
-        
         let ticket = self.ticket.read().ticket.clone();
         
         socket.send(Message::Text(prepare_command(&ClientCommand::Identify { 
@@ -255,32 +197,6 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T, NoCache> {
 
         // Oh, and something will need to listen to these...
         let chan = self.send_channel.clone();
-        Ok(tokio::spawn(read.for_each(move |res| {
-            // We don't want this to happen concurrently, because the events need to arrive in order
-            // But they only need to arrive in order for any given connection.
-            // Connections will end up interleaved in the channel consumer.
-            let chan = chan.clone();
-            let session = session.clone();
-            async move {
-                match res {
-                    Err(err) => {eprintln!("Error when reading from session: {err:?}");},
-                    // Error when reading from session: Protocol(ResetWithoutClosingHandshake)
-                    // Consider: Recording the last ERR sent by the server, and switching on that. Reconnect if not fatal?
-                    Ok(ok) => {
-                        match ok.to_text() {
-                            Err(err) => {eprintln!("Message frame is not text: {err:?}");},
-                            Ok(text) => {
-                                let command = parse_command(text);
-                                chan.send(Event {
-                                    command,
-                                    session
-                                }).await.expect("Failed to send command through Tokio mpsc channel");
-                            }
-                        };
-                    }
-                };
-            }
-        })))
     }
 
     pub fn get_session(&self, session: &Character) -> Option<Arc<Session>> {

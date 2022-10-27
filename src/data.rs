@@ -165,6 +165,12 @@ impl Default for TypingStatus {
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
+pub struct FriendRelation {
+    pub own_character: Character,
+    pub other_character: Character
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum KinkInterest {
     Fave,
@@ -175,9 +181,49 @@ pub enum KinkInterest {
 // No default impl for KinkInterest because it's not sane; unlisted kinks should never be in a collection.
 
 // Strong typing for string IDs
-#[derive(Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
-pub struct Channel(pub StackString<20>);
-#[derive(Serialize, Deserialize, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+// Protocol can't decide if it should use uppercase or lowercase names, so eq case-invariant.
+
+// Channels (IDs) are limited to ~26 characters
+// Unofficial channels are 24 chars total
+// ADH- 731af796f59d06bec167
+// 1234 12345678901234567890
+
+// Longest official channel is "Pregnancy and Impregnation" at 26 chars
+//                              12345678901234567890123456
+// Don't @ me, I don't make the titles.
+
+// Channel -names- are limited to 64 characters ("64.4999" per error message)
+// Accordingly, this may later just become String again.
+#[derive(Serialize, Deserialize, Default, Copy, Clone, PartialOrd, Ord, Debug)]
+pub struct Channel(pub StackString<26>);
+impl PartialEq for Channel {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&*other.0)
+    }
+}
+impl Eq for Channel {}
+impl std::hash::Hash for Channel {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.to_ascii_lowercase().hash(state);
+    }
+}
+
+// Characters are limited to 20 chars on creation.
+// If this gets changed, everything is going to explode. Whoops.
+#[derive(Serialize, Deserialize, Default, Copy, Clone, PartialOrd, Ord, Debug)]
 pub struct Character(pub StackString<20>);
+impl PartialEq for Character {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&*other.0)
+    }
+}
+impl Eq for Character {}
+impl std::hash::Hash for Character {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        // Optimize later with extra StackString? Probably not.
+        // Would avoid intermediate heap allocation for String.
+        self.0.to_ascii_lowercase().hash(state);
+    }
+}
 
 stringable!(CharacterId: u64, CharacterIdProxy, "CharacterIdProxy");
