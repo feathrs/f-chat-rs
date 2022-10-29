@@ -19,9 +19,9 @@ use parking_lot::RwLock;
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
-use tokio::sync::mpsc::{Sender, channel};
+use tokio::sync::mpsc::{Sender, Receiver, channel};
 
-use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{Character, Channel, Status, TypingStatus, ChannelMode, MessageChannel, Message, MessageContent}, protocol::*, cache::{Cache, NoCache, PartialChannelData, PartialUserData}, session::{Event, Session, SessionError}, util::timestamp::Timestamp};
+use crate::{http_endpoints::{get_api_ticket, self}, data::{Character, Channel, Status, TypingStatus, MessageChannel, Message, MessageContent, FriendRelation}, protocol::*, cache::{Cache, NoCache, PartialChannelData, PartialUserData}, session::{Event, Session, SessionError}};
 
 #[derive(Debug)]
 pub struct Client<T: EventListener, C: Cache> {
@@ -82,8 +82,14 @@ impl Token {
         self.last_updated = Instant::now();
     }
 }
+impl Default for Token {
+    fn default() -> Self {
+        Self::zero()
+    }
+}
 
-struct ClientBuilder<E: EventListener, C: Cache> {
+#[derive(Debug)]
+pub struct ClientBuilder<E: EventListener, C: Cache> {
     client_version: String,
     client_name: String,
     events: E,
@@ -101,7 +107,7 @@ impl<E: EventListener> ClientBuilder<E, NoCache> {
     }
 }
 
-impl<E: EventListener, C: Cache> ClientBuilder<E, C> {
+impl<E: EventListener + 'static, C: Cache + 'static> ClientBuilder<E, C> {
     pub fn with_cache<C2: Cache>(self, cache: C2) -> ClientBuilder<E, C2> {
         ClientBuilder {
             client_version: self.client_version,
@@ -118,7 +124,7 @@ impl<E: EventListener, C: Cache> ClientBuilder<E, C> {
         }
     }
 
-    pub async fn init(self, username: String, password: String) -> ClientResult<Arc<Client<E, C>>> {
+    pub async fn init(self, username: String, password: String) -> ClientResult<(Client<E, C>, Receiver<Event>)> {
         let http = ReqwestClient::new();
         let (send, rcv) = channel(8);
         let ticket_init = get_api_ticket(&http, &username, &password, true).await?;
@@ -131,7 +137,10 @@ impl<E: EventListener, C: Cache> ClientBuilder<E, C> {
             .ok_or(ClientError::NoDefaultCharacter)?;
         let own_characters = extra.characters.drain().map(|(character, _)|character).collect();
 
-        let client = Arc::new(Client {
+        self.cache.set_bookmarks(extra.bookmarks.drain(..).map(|v|v.name).collect::<Vec<_>>().into()).unwrap();
+        self.cache.set_friends(extra.friends.drain(..).map(|v|FriendRelation{own_character:v.dest, other_character:v.source}).collect::<Vec<_>>().into()).unwrap();
+
+        let client = Client {
             client_name: self.client_name,
             client_version: self.client_version,
             username, password,
@@ -143,22 +152,19 @@ impl<E: EventListener, C: Cache> ClientBuilder<E, C> {
             sessions: Default::default(),
             send_channel: send,
             event_listener: self.events,
-        });
+        };
 
-        {
-            let client = client.clone();
-            tokio::spawn(async move {
-                while let Some(event) = rcv.recv().await {
-                    client.dispatch(event).await;
-                }
-            });
-        }
-
-        Ok(client)
+        Ok((client, rcv))
     }
 }
 
 impl<T: EventListener, C: Cache> Client<T, C> {
+    pub async fn start(&self, mut rcv: Receiver<Event>) {
+        while let Some(event) = rcv.recv().await {
+            self.dispatch(event).await;
+        }
+    }
+
     pub async fn refresh(&self) -> Result<(), ClientError> {
         let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, false).await?;
         self.token.write().update(ticket.ticket);
@@ -175,7 +181,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
     }
 
     pub async fn connect(&self, character: Character) -> ClientResult<()> {
-        self.refresh();
+        self.refresh().await?;
         let token = self.token.read().ticket.clone();
         let session = Session::connect(
             self.username.clone(),
@@ -191,8 +197,22 @@ impl<T: EventListener, C: Cache> Client<T, C> {
         Ok(())
     }
 
+    pub async fn sync_friends_bookmarks(&self) -> ClientResult<bool> {
+        // Events are mostly emitted through the event-handler.
+        self.refresh_fast().await?;
+        let ticket = self.token.read().ticket.clone();
+        let mut list = http_endpoints::get_friends_list(&self.http_client, &ticket, &self.username).await?.inner;
+        let update_bookmarks = self.cache.set_bookmarks(list.bookmarks.into()).unwrap();
+        let update_friends = self.cache.set_friends(
+            Cow::from(list.friends.drain(..).map(|v|FriendRelation{own_character:v.dest, other_character:v.source}).collect::<Vec<_>>())
+        ).unwrap();
+        if update_bookmarks {self.event_listener.updated_bookmarks().await}
+        if update_friends {self.event_listener.updated_friends().await}
+        Ok(update_friends || update_bookmarks)
+    }
+
     pub fn get_session(&self, session: &Character) -> Option<Arc<Session>> {
-        self.sessions.read().iter().find(|this_session| this_session.character == *session).map(|s|s.clone())
+        self.sessions.read().iter().find(|this_session| this_session.character == *session).cloned()
     }
 
     pub fn get_sessions(&self) -> Vec<Arc<Session>> {
@@ -203,14 +223,15 @@ impl<T: EventListener, C: Cache> Client<T, C> {
         self.sessions.write().retain(|v|v.character != *session)
     }
 
+    #[allow(unused_variables)]
     pub(crate) async fn dispatch(&self, event: Event) {
         match event.event {
             crate::session::SessionEvent::Reconnect => {
                 // Reconnect the session; treat it as having disconnected
-                self.refresh_fast();
+                self.refresh_fast().await.unwrap();
                 let ticket = self.token.read().ticket.clone();
                 let new_session = event.session.reconnect(
-                    self.username, 
+                    self.username.clone(), 
                     ticket, 
                     self.client_name.clone(), 
                     self.client_version.clone()
@@ -228,11 +249,11 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                 self.event_listener.sessions_updated().await;
             },
             crate::session::SessionEvent::Command(command) => {
-                self.event_listener.raw_command(event.session.clone(), &command);
+                self.event_listener.raw_command(event.session.clone(), &command).await;
                 match command {
-                    ServerCommand::GlobalOps { ops } => if self.cache.set_global_ops(ops).unwrap() {self.event_listener.updated_global_ops().await},
-                    ServerCommand::GlobalOpped { character } => if self.cache.add_global_op(character).unwrap() {self.event_listener.updated_global_ops().await},
-                    ServerCommand::GlobalDeopped { character } => if self.cache.remove_global_op(character).unwrap() {self.event_listener.updated_global_ops().await},
+                    ServerCommand::GlobalOps { ops } => if self.cache.set_global_ops(ops.into()).unwrap() {self.event_listener.updated_global_ops().await},
+                    ServerCommand::GlobalOpped { character } => if self.cache.add_global_op(Cow::Owned(character)).unwrap() {self.event_listener.updated_global_ops().await},
+                    ServerCommand::GlobalDeopped { character } => if self.cache.remove_global_op(Cow::Owned(character)).unwrap() {self.event_listener.updated_global_ops().await},
 
                     ServerCommand::Banned { operator, channel, character } => todo!("(Banned event)"), // Need a moderation abstraction
                     ServerCommand::Kicked { operator, channel, character } => todo!("(Kick event)"), // Each event has channel, character, operator
@@ -254,7 +275,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                                 mode: Some(channel.mode),
                                 ..Default::default()
                             }).unwrap() {
-                                self.event_listener.updated_channel(channel.name.clone()).await
+                                self.event_listener.updated_channel(channel.name).await
                             }
                         }
                         if self.cache.set_global_channels(Cow::Owned(channels.drain(..).map(|v|(v.name, v.characters)).collect())).unwrap() {
@@ -286,7 +307,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                             self.event_listener.updated_character(character).await
                         }
                     },
-                    ServerCommand::Hello { message } => panic!("HLO -- Should never reach client"), // Sunk by session impl
+                    ServerCommand::Hello { .. } => panic!("HLO -- Should never reach client"), // Sunk by session impl
                     ServerCommand::ChannelData { users, channel, mode } => {
                         if self.cache.insert_channel(Cow::Borrowed(&channel), PartialChannelData {
                             mode: Some(mode),
@@ -295,7 +316,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                             self.event_listener.updated_channel(channel).await
                         }
                     },
-                    ServerCommand::IdentifySuccess { character } => panic!("IDN -- Should never reach client"), // Sunk by session impl
+                    ServerCommand::IdentifySuccess { .. } => panic!("IDN -- Should never reach client"), // Sunk by session impl
                     ServerCommand::JoinedChannel { channel, character, title } => {
                         if self.cache.update_channel(Cow::Borrowed(&channel), PartialChannelData {
                             title: Some(title.into()),
@@ -307,7 +328,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                             self.event_listener.updated_session_channels(event.session).await
                         }
                     },
-                    ServerCommand::Kinks { response_type, message, key, value } => eprintln!("Received KID from server -- Use HTTP/JSON endpoint instead"),
+                    ServerCommand::Kinks { .. } => eprintln!("Received KID from server -- Use HTTP/JSON endpoint instead"),
                     ServerCommand::LeftChannel { channel, character } => {
                         if self.cache.remove_channel_member(Cow::Borrowed(&channel), character).unwrap() {
                             self.event_listener.updated_channel(channel).await
@@ -337,14 +358,14 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                         }
                     },
                     ServerCommand::Ignore { action, characters, character } => eprintln!("Missing handler for IGN"), // Should track
-                    ServerCommand::Friends { characters } => {}, // We ignore this because it's bad data.
+                    ServerCommand::Friends { .. } => {}, // We ignore this because it's bad data.
                     ServerCommand::Channels { mut channels } => {
                         for channel in channels.iter() {
                             if self.cache.update_channel(Cow::Borrowed(&channel.name), PartialChannelData {
-                                title: Some(channel.title.into()),
+                                title: Some(Cow::Borrowed(&channel.title)),
                                 ..Default::default()
                             }).unwrap() {
-                                self.event_listener.updated_channel(channel.name.clone()).await
+                                self.event_listener.updated_channel(channel.name).await
                             }
                         }
                         if self.cache.set_unofficial_channels(Cow::Owned(channels.drain(..).map(|v|(v.name, v.characters)).collect())).unwrap() {
@@ -352,11 +373,11 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                         }
                     },
                     ServerCommand::Ping => panic!("PIN -- Should never reach client"), // Sunk by session impl
-                    ServerCommand::ProfileData { response_type, message, key, value } => eprintln!("Received PRD from server -- Use HTTP/JSON endpoint instead"),
+                    ServerCommand::ProfileData { .. } => eprintln!("Received PRD from server -- Use HTTP/JSON endpoint instead"),
                     ServerCommand::PrivateMessage { character, message } => {
                         let source = MessageChannel::PrivateMessage(event.session.character, character);
                         let content = MessageContent::Message(message.clone());
-                        if self.cache.insert_message(source.clone(), Message {
+                        if self.cache.insert_message(source, Message {
                             timestamp: Utc::now(),
                             character,
                             content: content.clone(), // TODO: Ouch...
@@ -367,7 +388,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                     ServerCommand::Message { character, message, channel } => {
                         let source = MessageChannel::Channel(channel);
                         let content = MessageContent::Message(message.clone());
-                        if self.cache.insert_message(source.clone(), Message {
+                        if self.cache.insert_message(source, Message {
                             timestamp: Utc::now(),
                             character,
                             content: content.clone(),
@@ -376,8 +397,8 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                         }
                     },
                     ServerCommand::Ad { character, message, channel } => {
-                        if self.cache.insert_ad(channel, character, message) {
-                            self.event_listener.ad(channel, character, message);
+                        if self.cache.insert_ad(Cow::Borrowed(&channel), Cow::Borrowed(&character), Cow::Borrowed(&message)).unwrap() {
+                            self.event_listener.ad(channel, character, message).await;
                         }
                     },
                     ServerCommand::Roll { target, results, response_type, rolls, character, endresult, message } => {
@@ -387,7 +408,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                             Target::Character { recipient } => MessageChannel::PrivateMessage(recipient, character),
                         };
                         let content = MessageContent::Roll(rolls, results, endresult);
-                        if self.cache.insert_message(source.clone(), Message {
+                        if self.cache.insert_message(source, Message {
                             timestamp: Utc::now(),
                             character,
                             content: content.clone(),
@@ -418,7 +439,7 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                             BridgeEvent::FriendAdd | BridgeEvent::FriendRemove => {
                                 // Both FriendAdd and FriendRemove don't include the full relation data,
                                 // So we sync the friend list via the HTTP/JSON endpoint.
-                                self.sync_friends_bookmarks().await
+                                self.sync_friends_bookmarks().await.unwrap();
                             },
                             BridgeEvent::FriendRequest => {
                                 eprintln!("Not handling RTB FriendRequest");
@@ -442,12 +463,12 @@ impl<T: EventListener, C: Cache> Client<T, C> {
                     ServerCommand::Typing { character, status } => {
                         self.event_listener.typing(event.session, character, status).await
                     },
-                    ServerCommand::Uptime { time, starttime, startstring, accepted, channels, users, maxusers } => eprintln!("Not handling UPT"),
+                    ServerCommand::Uptime { .. } => eprintln!("Not handling UPT"),
                     ServerCommand::Variable(_) => panic!("VAR -- Should never reach client"), // Sunk by Session impl
                 }
             },
             crate::session::SessionEvent::Error(err) => {
-                self.event_listener.session_error(event.session, err);
+                self.event_listener.session_error(event.session, err).await;
             },
         }
     }

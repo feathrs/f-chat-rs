@@ -40,7 +40,7 @@ stringable!(StringInteger: u64, IntegerProxy, "IntegerProxy");
 pub struct StackString<const N: usize>([u8; N], usize); // If you use it for N>48 I'll kill you.
 impl<const N: usize> StackString<N> {
     // Take &str to promise that it's valid utf8
-    fn new(from: &str) -> Self {
+    pub fn new(from: &str) -> Self {
         let len = from.len();
         let mut data = [0u8;N];
         let (left, _) = data.split_at_mut(len); // We already promise len <= N; use unchecked when stable
@@ -48,7 +48,7 @@ impl<const N: usize> StackString<N> {
         StackString(data, len)
     }
 
-    fn try_new(from: &str) -> Result<Self, ()> {
+    pub fn try_new(from: &str) -> Result<Self, ()> {
         if from.len() > N {
             Err(()) // It's too long.
         } else {

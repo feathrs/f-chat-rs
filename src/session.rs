@@ -118,7 +118,7 @@ impl Session {
         for channel in self.channels.iter() {
             write.feed(Message::Text(prepare_command(&ClientCommand::JoinChannel { channel: channel.to_owned() }))).await?
         }
-        write.flush().await;
+        write.flush().await?;
         drop(write); // If I don't drop here, it complains that the guard still exists when I return session.
 
         Ok(session)
@@ -188,7 +188,7 @@ impl Session {
     }
 
     fn start_event_loop(session: Arc<Session>, read: SplitStream<Socket>) -> SessionResult<JoinHandle<()>> {
-        Ok(tokio::spawn(read.for_each(move |res| async move {
+        Ok(tokio::spawn(read.for_each(move |res| {let session = session.clone(); async move {
             // We don't want this to happen concurrently, because the events need to arrive in order
             // But they only need to arrive in order for any given connection.
             // Connections will end up interleaved in the channel consumer.
@@ -223,7 +223,7 @@ impl Session {
                     eprintln!("Unexpected frame from F-Chat: {other:?}")
                 }
             }
-        })))
+        }})))
     }
 
     async fn handle_command(session: &Arc<Session>, command: &ServerCommand) -> SessionResult<bool> {
@@ -232,12 +232,12 @@ impl Session {
             ServerCommand::Hello { .. } => Ok(false), 
             ServerCommand::Connected { .. } => Ok(true), // Because Connected is sent after Hello, it's a better "ready" event
 
-            ServerCommand::Error { number, message } => {
+            ServerCommand::Error { number, .. } => {
                 session.last_err.store(*number, std::sync::atomic::Ordering::Relaxed);
                 Ok(true)
             },
 
-            ServerCommand::JoinedChannel { channel, character, title } => {
+            ServerCommand::JoinedChannel { channel, character, .. } => {
                 if *character == session.character {
                     // If it was this session, update the joined-channels list.
                     session.channels.insert(*channel);

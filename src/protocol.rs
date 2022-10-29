@@ -1,4 +1,4 @@
-use crate::{data::*, util::timestamp::Timestamp};
+use crate::{data::*, util::{timestamp::Timestamp, StackString}};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, from_value, to_value, to_writer, Value};
 use std::{io::Write as _, str::FromStr};
@@ -9,9 +9,8 @@ use std::{io::Write as _, str::FromStr};
 // But mutually they can suck one.
 
 #[derive(Serialize, Deserialize, Debug)]
-struct CommandDummy<'a> {
-    #[serde(borrow)]
-    command: &'a str,
+struct CommandDummy {
+    command: StackString<3>,
     #[serde(default)]
     data: Value,
 }
@@ -24,14 +23,14 @@ pub fn parse_command(command: &str) -> ServerCommand {
             if command.len() < 4 {
                 // If the command has no body.
                 CommandDummy {
-                    command, 
+                    command: StackString::new(command), 
                     data: Value::Null
                 }
             } else {
                 // Split the command into the JSON data body and the command head
                 let (head, data) = command.split_at(4);
                 CommandDummy {
-                    command: head.trim(),
+                    command: StackString::new(head.trim()),
                     data: from_str(data).expect("Unable to parse data to Value"),
                 }
             }
@@ -459,45 +458,28 @@ pub enum Target {
 
 mod character_identity {
     #![allow(missing_debug_implementations)]
-    use serde::{Serializer, Deserializer, Serialize, Deserialize};
+    use serde::{Deserializer, Deserialize};
     use super::Character;
 
-    #[derive(Serialize)]
-    struct SCharacterIdentity<'a> {
-        identity: &'a Character
-    }
-    #[derive(Serialize, Deserialize)]
+    #[derive(Deserialize)]
     #[repr(transparent)]
     struct DCharacterIdentity {
         identity: Character
     }
 
-    pub(super) fn serialize<S>(character: &Character, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-        SCharacterIdentity { identity: character }.serialize(serializer)
-    }
     pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Character, D::Error> where D: Deserializer<'de> {
         DCharacterIdentity::deserialize(deserializer).map(|v|v.identity)
     }
 
     pub(crate) mod vec {
-        use serde::{Serializer, Deserializer, Serialize, Deserialize};
+        use serde::{Deserializer, Deserialize};
         use super::super::Character;
         use super::DCharacterIdentity;
 
-        pub(crate) fn serialize<S>(characters: &Vec<Character>, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
-            // I -will- go to hell for this. Not least because I'm transmuting references.
-            // Really, I just want to type-pun these for their implementations of Serialize/Deserialize
-            unsafe{std::mem::transmute::<_, &Vec<DCharacterIdentity>>(characters)}.serialize(serializer)
-        }
         pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Character>, D::Error> where D: Deserializer<'de> {
             <Vec::<DCharacterIdentity>>::deserialize(deserializer).map(|vec|unsafe{std::mem::transmute(vec)})
         }
     }
-}
-
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-pub struct CharacterIdentity {
-    pub identity: Character,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
