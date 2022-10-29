@@ -231,7 +231,7 @@ pub enum ServerCommand {
         description: String,
     },
     #[serde(rename = "CHA")]
-    GlobalChannels { channels: Vec<Channel> },
+    GlobalChannels { channels: Vec<GlobalChannelInfo> },
     #[serde(rename = "CIU")]
     Invited {
         sender: Character,
@@ -375,12 +375,12 @@ pub enum ServerCommand {
     Roll {
         #[serde(flatten)]
         target: Target,
-        results: Vec<u32>,
+        results: Vec<i32>,
         #[serde(rename = "type")]
         response_type: String,
         rolls: Vec<String>,
         character: Character,
-        endresult: u32,
+        endresult: i32,
         message: String,
     },
     #[serde(rename = "RMO")]
@@ -516,6 +516,13 @@ pub struct ChannelInfo {
     pub name: Channel,
     pub characters: u32,
     pub title: String,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+pub struct GlobalChannelInfo {
+    pub name: Channel,
+    pub mode: ChannelMode,
+    pub characters: u32
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]

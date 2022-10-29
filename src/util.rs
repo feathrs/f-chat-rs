@@ -186,7 +186,7 @@ pub(crate) mod timestamp {
     // Converting to/from it is important for consumers.
     pub type Timestamp = DateTime<Utc>;
 
-    pub fn serialize<S>(timestamp: Timestamp, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    pub fn serialize<S>(timestamp: &Timestamp, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         serializer.serialize_u64(timestamp.timestamp() as u64)
     }
 

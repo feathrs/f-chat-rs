@@ -1,5 +1,7 @@
+#![forbid(private_in_public)]
+
 use serde::{Deserialize, Serialize};
-use crate::{stringable, util::StackString};
+use crate::{stringable, util::{StackString, timestamp::Timestamp}};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "PascalCase")]
@@ -227,3 +229,43 @@ impl std::hash::Hash for Character {
 }
 
 stringable!(CharacterId: u64, CharacterIdProxy, "CharacterIdProxy");
+
+// Abstraction for unifying message streams
+#[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq)]
+pub enum MessageChannel {
+    Channel(Channel),
+    PrivateMessage(Character, Character)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct Message {
+    #[serde(with = "crate::util::timestamp")]
+    pub timestamp: Timestamp,
+    pub character: Character,
+    pub content: MessageContent
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum MessageContent {
+    Message(String),
+    Emote(String),
+    Roll(Vec<String>, Vec<i32>, i32),
+    Bottle(Character)
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ChannelData {
+    pub channel: Channel,
+    pub channel_mode: ChannelMode,
+    pub members: Vec<Character>,
+    pub description: String,
+    pub title: String,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct CharacterData {
+    pub character: Character,
+    pub gender: Gender,
+    pub status: Status,
+    pub status_message: String,
+}

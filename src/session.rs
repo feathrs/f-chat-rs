@@ -3,11 +3,11 @@ use std::sync::{Arc, atomic::AtomicI32};
 use dashmap::{DashMap, DashSet}; use thiserror::Error;
 // Optionally switch to BTree and manually manage R/W sync
 use tokio::{sync::{Mutex as AsyncMutex, mpsc::{Sender, error::SendError}}, task::JoinHandle};
-use futures_util::{stream::{SplitSink, SplitStream}, SinkExt, StreamExt, TryStreamExt};
+use futures_util::{stream::{SplitSink, SplitStream}, SinkExt, StreamExt, TryStreamExt, join};
 use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, tungstenite::{Message, error::ProtocolError as WebsocketError}, connect_async_tls_with_config};
 use tokio::net::TcpStream;
 
-use crate::{data::{Character, TypingStatus, Channel}, protocol::{ServerCommand, ClientCommand, IdentifyMethod, prepare_command, parse_command, Variable, ProtocolError}};
+use crate::{data::{Character, TypingStatus, Channel}, protocol::{ServerCommand, ClientCommand, IdentifyMethod, prepare_command, parse_command, Variable, ProtocolError, Target}};
 
 #[derive(Debug, Default, Clone)]
 pub struct Variables {
@@ -31,8 +31,8 @@ pub enum SessionEvent {
 
 #[derive(Debug)]
 pub struct Event {
-    session: Arc<Session>,
-    event: SessionEvent
+    pub session: Arc<Session>,
+    pub event: SessionEvent
 }
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -85,6 +85,9 @@ impl Session {
             event_channel
         });
         Session::start_event_loop(session.clone(), read)?;
+        if Session::handle_command(&session, &next).await? {
+            Session::emit_event(&session, SessionEvent::Command(next)).await.expect("Failed to send event (command - next)");
+        }
 
         Ok(session)
     }
@@ -106,6 +109,9 @@ impl Session {
             event_channel: self.event_channel.clone(),
         });
         Session::start_event_loop(session.clone(), read)?;
+        if Session::handle_command(&session, &next).await? {
+            Session::emit_event(&session, SessionEvent::Command(next)).await.expect("Failed to send event (command - next)");
+        }
 
         // Now try to re-join all of the old channels.
         let mut write = session.write.lock().await;
@@ -254,9 +260,11 @@ impl Session {
                 }
             },
 
+            // These shouldn't happen because they're handled in init
             ServerCommand::IdentifySuccess { .. } => Err(SessionError::LateIdentifyCommand),
             ServerCommand::Variable(_) => Err(SessionError::LateVarCommand),
 
+            // Anything else, forward it to the client event-handler
             _ => Ok(true)
         }
     }
@@ -265,13 +273,12 @@ impl Session {
         Ok(self.write.lock().await.send(Message::Text(prepare_command(&command))).await?)
     }
 
-    pub async fn send_message(&self, target: MessageTarget, message: String) -> SessionResult<()> {
+    pub async fn send_message(&self, target: Target, message: String) -> SessionResult<()> {
         match target {
-            MessageTarget::Broadcast => self.send(ClientCommand::Broadcast { message }).await?,
-            MessageTarget::Channel(channel) => self.send(ClientCommand::Message { channel, message }).await?,
-            MessageTarget::PrivateMessage(recipient) => {
+            Target::Channel {channel} => self.send(ClientCommand::Message { channel, message }).await?,
+            Target::Character {recipient} => {
                 let (ra, rb) = join!(
-                    self.send(ClientCommand::PrivateMessage { recipient: recipient.clone(), message }),
+                    self.send(ClientCommand::PrivateMessage { recipient, message }),
                     self.send(ClientCommand::Typing {
                         character: recipient,
                         status: TypingStatus::Clear
@@ -283,12 +290,15 @@ impl Session {
         Ok(())
     }
 
-    pub async fn send_dice(&self, target: MessageTarget, dice: String) -> SessionResult<()> {
+    pub async fn send_dice(&self, target: Target, dice: String) -> SessionResult<()> {
         self.send(match target {
-            MessageTarget::Broadcast => panic!("You can't broadcast dice!"), // Upstream invalid state. Implementor logic error.
-            MessageTarget::Channel(channel) => ClientCommand::Roll { target: Target::Channel { channel }, dice },
-            MessageTarget::PrivateMessage(recipient) => ClientCommand::Roll { target: Target::Character { recipient }, dice }
+            target @ Target::Channel{..} => ClientCommand::Roll { target, dice },
+            target @ Target::Character{..} => ClientCommand::Roll { target, dice }
         }).await
+    }
+
+    pub async fn send_ad(&self, channel: Channel, ad: String) -> SessionResult<()> {
+        self.send(ClientCommand::Ad { channel, message: ad }).await
     }
 
     pub async fn join_channel(&self, channel: Channel) -> SessionResult<()> {

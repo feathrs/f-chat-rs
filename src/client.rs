@@ -12,20 +12,16 @@
 // I should also use async locks if contention is high or leases are long.
 
 pub use async_trait::async_trait;
-use serde::Serialize;
+use chrono::Utc;
 
-use std::{time::{Instant, Duration}, sync::Arc, collections::{BTreeSet}};
-use bimap::BiBTreeMap;
-use dashmap::{DashMap, DashSet};
+use std::{time::{Instant, Duration}, sync::Arc, borrow::Cow};
 use parking_lot::RwLock;
 use thiserror::Error;
 
 use reqwest::Client as ReqwestClient;
-use tokio::{net::TcpStream, sync::{mpsc::{Sender, Receiver, channel}, Mutex as AsyncMutex}, task::JoinHandle};
-use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, tungstenite::Message, connect_async_tls_with_config};
-use futures_util::{SinkExt, StreamExt, stream::SplitSink, join};
+use tokio::sync::mpsc::{Sender, channel};
 
-use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{CharacterId, Character, Channel, ChannelMode, Gender, Status, TypingStatus}, protocol::*, cache::{Cache, NoCache}};
+use crate::{http_endpoints::{get_api_ticket, get_friends_list}, data::{Character, Channel, Status, TypingStatus, ChannelMode, MessageChannel, Message, MessageContent}, protocol::*, cache::{Cache, NoCache, PartialChannelData, PartialUserData}, session::{Event, Session, SessionError}, util::timestamp::Timestamp};
 
 #[derive(Debug)]
 pub struct Client<T: EventListener, C: Cache> {
@@ -34,45 +30,17 @@ pub struct Client<T: EventListener, C: Cache> {
 
     username: String,
     password: String,
-    ticket: RwLock<Token>,
+    token: RwLock<Token>,
     http_client: ReqwestClient,
-    default_character: CharacterId,
+    pub default_character: Character,
+    pub own_characters: Vec<Character>,
 
-    cache: C,
-
-    // It might later be sane to move this into a specialized cache/state structure
-    // That way I can hide the implementation of the caching from consumers.
-    // For now, however, I need to understand how I'm using the data.
-    // Own account data
-    pub own_characters: BiBTreeMap<Character, CharacterId>,
-    pub bookmarks: DashSet<Character>,
-    pub friends: DashSet<Character>,
-
-    // Global data
-    // I am using DashMap because I don't want to deal with locking, but this might be better as a BTreeMap
-    // if I feel like handling locking myself at some point.
-    pub channel_data: DashMap<Channel, ChannelData>,
-    pub character_data: DashMap<Character, CharacterData>,
-    pub admins: RwLock<Vec<Character>>,
-    pub ignorelist: RwLock<Vec<Character>>,
-    pub global_channels: DashSet<Channel>,
+    pub cache: C,
 
     sessions: RwLock<Vec<Arc<Session>>>,
     send_channel: Sender<Event>,
-    rcv_channel: AsyncMutex<Receiver<Event>>,
 
     event_listener: T
-}
-
-#[derive(Debug)]
-pub struct Session {
-    pub character: Character,
-    pub channels: BTreeSet<Channel>,
-    pub pms: DashMap<Character, TypingStatus>,
-
-    pub variables: RwLock<Variables>,
-
-    write: AsyncMutex<SplitSink<Socket, Message>>
 }
 
 #[derive(Error, Debug)]
@@ -81,7 +49,12 @@ pub enum ClientError {
     RequestError(#[from] reqwest::Error),
     #[error("Error from Websocket (Tungstenite)")]
     WebsocketError(#[from] tokio_tungstenite::tungstenite::Error),
+    #[error("Default character doesn't exist or is invalid")]
+    NoDefaultCharacter,
+    #[error("Error from Session implementation")]
+    SessionError(#[from] crate::session::SessionError)
 }
+type ClientResult<T> = Result<T, ClientError>;
 
 #[derive(Debug, Clone)]
 struct Token {
@@ -110,93 +83,112 @@ impl Token {
     }
 }
 
-impl<T: EventListener + std::marker::Sync + Sized> Client<T, NoCache> {
-    pub fn new(username: String, password: String, client_name: String, client_version: String, event_listener: T) -> Client<T, NoCache> {
-        let http = ReqwestClient::new();
-        let (send, rcv) = channel(8);
-        Client {
-            // Use a builder for this later. Part of a refactoring task.
-            client_name, client_version,
+struct ClientBuilder<E: EventListener, C: Cache> {
+    client_version: String,
+    client_name: String,
+    events: E,
+    cache: C
+}
 
-            username, password, 
-            ticket: RwLock::new(Token::zero()),
-            http_client: http,
-            default_character: CharacterId(0),
+impl<E: EventListener> ClientBuilder<E, NoCache> {
+    pub fn new(events: E) -> Self {
+        ClientBuilder { 
+            client_version: option_env!("CARGO_PKG_VERSION").unwrap_or("0.1").to_owned(), 
+            client_name: "f-chat-rs".to_string(), 
+            events, 
+            cache: NoCache 
+        }
+    }
+}
 
-            own_characters: BiBTreeMap::new(),
-            bookmarks: Default::default(),
-            friends: Default::default(),
-
-            channel_data: DashMap::new(),
-            character_data: DashMap::new(),
-            admins: Default::default(),
-            ignorelist: Default::default(),
-            global_channels: DashSet::new(),
-
-            sessions: RwLock::new(Vec::new()),
-            send_channel: send,
-            rcv_channel: AsyncMutex::new(rcv),
-
-            cache: NoCache,
-            event_listener,
+impl<E: EventListener, C: Cache> ClientBuilder<E, C> {
+    pub fn with_cache<C2: Cache>(self, cache: C2) -> ClientBuilder<E, C2> {
+        ClientBuilder {
+            client_version: self.client_version,
+            client_name: self.client_name,
+            events: self.events,
+            cache
         }
     }
 
-    pub async fn init(&mut self) -> Result<(), ClientError> {
-        let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, true).await?;
-        *self.ticket.write() = Token::new(ticket.ticket);
-        let mut extra = ticket.extra.unwrap();
-        self.default_character = extra.default_character;
-
-        self.own_characters = extra.characters.drain().collect();
-        self.bookmarks = extra.bookmarks.drain(..).map(|c|c.name).collect();
-        // This function should probably return this value and clone-map it into friends instead
-        // Friend data is repopulated when a session is started.
-        self.friends = extra.friends.drain(..).map(|f|f.source).collect();
-
-        Ok(())
+    pub fn with_version(self, client_name: String, client_version: String) -> Self {
+        ClientBuilder {
+            client_name, client_version,
+            ..self
+        }
     }
 
+    pub async fn init(self, username: String, password: String) -> ClientResult<Arc<Client<E, C>>> {
+        let http = ReqwestClient::new();
+        let (send, rcv) = channel(8);
+        let ticket_init = get_api_ticket(&http, &username, &password, true).await?;
+        let token = Token::new(ticket_init.ticket);
+        
+        let mut extra = ticket_init.extra.expect("Ticket init response did not send extra fields");
+        let default_char = extra.default_character;
+        let default_character = extra.characters.iter()
+            .find_map(move |(char, id)| if id == &default_char {Some(*char)} else {None})
+            .ok_or(ClientError::NoDefaultCharacter)?;
+        let own_characters = extra.characters.drain().map(|(character, _)|character).collect();
+
+        let client = Arc::new(Client {
+            client_name: self.client_name,
+            client_version: self.client_version,
+            username, password,
+            token: RwLock::new(token),
+            http_client: http,
+            default_character,
+            own_characters,
+            cache: self.cache,
+            sessions: Default::default(),
+            send_channel: send,
+            event_listener: self.events,
+        });
+
+        {
+            let client = client.clone();
+            tokio::spawn(async move {
+                while let Some(event) = rcv.recv().await {
+                    client.dispatch(event).await;
+                }
+            });
+        }
+
+        Ok(client)
+    }
+}
+
+impl<T: EventListener, C: Cache> Client<T, C> {
     pub async fn refresh(&self) -> Result<(), ClientError> {
         let ticket = get_api_ticket(&self.http_client, &self.username, &self.password, false).await?;
-        self.ticket.write().update(ticket.ticket);
+        self.token.write().update(ticket.ticket);
         Ok(())
     }
 
     pub async fn refresh_fast(&self) -> Result<(), ClientError> {
         // Optimistically refresh if the token is more than 20 minutes old
         // Supposedly it lasts 30 minutes but I don't trust these devs and their crap API
-        if self.ticket.read().expired() {
+        if self.token.read().expired() {
             self.refresh().await?;
         }
         Ok(())
     }
 
-    pub async fn connect(&self, character: Character) -> Result<JoinHandle<()>, ClientError> {
-        let ticket = self.ticket.read().ticket.clone();
-        
-        socket.send(Message::Text(prepare_command(&ClientCommand::Identify { 
-            method: IdentifyMethod::Ticket, 
-            account: self.username.clone(), 
-            ticket, 
-            character: character.clone(), 
-            client_name: self.client_name.clone(), 
-            client_version: self.client_version.clone() 
-        }))).await?;
+    pub async fn connect(&self, character: Character) -> ClientResult<()> {
+        self.refresh();
+        let token = self.token.read().ticket.clone();
+        let session = Session::connect(
+            self.username.clone(),
+            token, 
+            self.client_name.clone(), 
+            self.client_version.clone(), 
+            character, 
+            self.send_channel.clone()
+        ).await?;
 
-        let (write, read) = socket.split();
-
-        let session = Arc::new(Session {
-            character,
-            write: AsyncMutex::new(write),
-            channels: BTreeSet::new(),
-            pms: DashMap::new(),
-            variables: Default::default()
-        });
-        self.sessions.write().push(session.clone());
-
-        // Oh, and something will need to listen to these...
-        let chan = self.send_channel.clone();
+        // Add the new session to the list, to hold on to it.
+        self.sessions.write().push(session);
+        Ok(())
     }
 
     pub fn get_session(&self, session: &Character) -> Option<Arc<Session>> {
@@ -207,211 +199,287 @@ impl<T: EventListener + std::marker::Sync + Sized> Client<T, NoCache> {
         self.sessions.read().clone()
     }
 
-    async fn dispatch(&self, event: Event) {
-        match event.command {
-            ServerCommand::IdentifySuccess { character } => assert_eq!(event.session.character, character),
-            ServerCommand::Hello {message} => self.event_listener.hello(event.session, &message).await,
-            ServerCommand::Error {number, message} => self.event_listener.raw_error(event.session, number, &message).await,
-            ServerCommand::Connected { count } => self.event_listener.connected(event.session, count).await,
-
-            // Variables init
-            ServerCommand::Variable(var) => {
-                let mut vars = event.session.variables.write();
-                match var {
-                    Variable::AdCooldown(t) => vars.ad_cooldown = t,
-                    Variable::ChatCooldown(t) => vars.chat_cooldown = t,
-                    Variable::StatusCooldown(t) => vars.status_cooldown = t,
-                    Variable::AdMax(n) => vars.ad_max = n,
-                    Variable::ChatMax(n) => vars.chat_max = n,
-                    Variable::PrivMax(n) => vars.priv_max = n,
-                    Variable::IconBlacklist(channels) => vars.icon_blacklist = channels,
-                    _ => eprintln!("Unhandled variable {var:?}"),
-                }
-            }
-
-            // Messages
-            ServerCommand::Broadcast { message, character } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Broadcast, &message).await,
-            ServerCommand::Message { character, message, channel } => self.event_listener.message(event.session, &MessageSource::Character(character), &MessageTarget::Channel(channel), &message).await,
-            ServerCommand::PrivateMessage { character, message } => self.event_listener.message(event.session, &MessageSource::Character(character.clone()), &MessageTarget::PrivateMessage(character), &message).await,
-            ServerCommand::SystemMessage { message, channel } => self.event_listener.message(event.session, &MessageSource::System, &MessageTarget::Channel(channel), &message).await,
-
-            // State updates (Channels)
-            ServerCommand::ChannelData { mut users, channel, mode } => {
-                // CharacterIdentity is just Character, but structurally different because F-Chat.
-                // Turn it into Character when storing it.
-                // Maybe later can transmute if I promise they have the same memory layout (transparent String)
-                let mut entry = self.channel_data.entry(channel.clone()).or_default();
-                entry.channel_mode = mode;
-                entry.members = users.drain(..).map(|v|v.identity).collect();
-                self.event_listener.updated_channel(channel).await;
-            },
-            ServerCommand::ChannelDescription { channel, description } => {
-                let mut entry = self.channel_data.entry(channel.clone()).or_default();
-                entry.description = description;
-                self.event_listener.updated_channel(channel).await;
-            }
-            ServerCommand::ChannelMode { mode, channel } => {
-                let mut entry = self.channel_data.entry(channel.clone()).or_default();
-                entry.channel_mode = mode;
-                self.event_listener.updated_channel(channel).await;
-            }
-            ServerCommand::JoinedChannel { channel, character, title } => {
-                let mut entry = self.channel_data.entry(channel.clone()).or_default();
-                entry.title = title;
-                entry.members.insert(character.identity);
-                self.event_listener.updated_channel(channel).await;
-            }
-            ServerCommand::LeftChannel { channel, character } => {
-                let mut entry = self.channel_data.entry(channel.clone()).or_default();
-                entry.members.remove(&character);
-                self.event_listener.updated_channel(channel).await;
-            }
-            // If you think about it, typing is just a state update for a PM channel. Sort of.
-            ServerCommand::Typing { character, status } => {
-                event.session.pms.insert(character.clone(), status);
-                self.event_listener.typing(event.session, character, status).await;
-            }
-
-            // State updates (Characters)
-            /*
-            ServerCommand::ProfileData { response_type, message, key, value } => {
-                // There's two ways to handle this:
-                // - Statefully, where the client tracks the start/end and issues a profile update at the end
-                // - Statelessly, where the client updates every time and emits an update event at the end
-                // In this case, stateless simply makes the most sense.
-                // However, because the profiles are keyed with strong keys rather than strings, it'll need matching.
-                // There are also potential race conditions for profile updates, but I'm not sure that I actually care.
-                match response_type {
-                    ProfileDataPart::Start => {},
-                    ProfileDataPart::Info => {},
-                    ProfileDataPart::Select => {},
-                    ProfileDataPart::End => {}
-                }
-            }
-            */
-            ServerCommand::ListOnline { mut characters } => {
-                // This command is *sinful* and floods with every character's info. All of them.
-                for character in characters.drain(..) {
-                    self.character_data.insert(character.0, CharacterData {
-                        gender: character.1,
-                        status: character.2,
-                        status_message: character.3,
-                    });
-                }
-                // No, I refuse to emit an event for every character here.
-                // Instead, I'll later work out the order the server sends messages and have an "ok we're done"
-                self.event_listener.list_online().await;
-            },
-            ServerCommand::NewConnection { status, gender, identity } => {
-                let data = CharacterData {
-                    gender, status, status_message: "".to_owned()
-                };
-                self.character_data.insert(identity.clone(), data);
-                self.event_listener.updated_character(identity).await;
-            },
-            ServerCommand::Offline { character } => {
-                // This could instead just *remove* the character.
-                // But that would get rid of the latent gender information
-                // Most people appear to expect to see None gender for Offline chars, but we can retain it.
-                self.character_data.entry(character.clone()).and_modify(|v| {
-                    v.status = Status::Offline;
-                    v.status_message = "".to_owned();
-                });
-                self.event_listener.updated_character(character).await;
-            },
-            ServerCommand::Status { status, character, statusmsg } => {
-                self.character_data.entry(character.clone()).and_modify(|v| {
-                    v.status = status;
-                    v.status_message = statusmsg;
-                });
-                self.event_listener.updated_character(character).await;
-            },
-
-            // State updates (global again)
-            ServerCommand::Friends { .. } => {
-                // N.B. it looks like FRL includes bookmarks, so... Ignore this one's data. Entirely.
-                // There's no point in using it because I already populate friends/bookmarks on init.
-            },
-            ServerCommand::BridgeEvent { response_type, name } => {
-                match response_type {
-                    BridgeEvent::BookmarkAdd => {
-                        self.bookmarks.insert(name);
-                        self.event_listener.updated_bookmarks().await;
-                    },
-                    BridgeEvent::BookmarkRemove => {
-                        self.bookmarks.remove(&name);
-                        self.event_listener.updated_bookmarks().await;
-                    },
-                    BridgeEvent::FriendAdd => {
-                        self.friends.insert(name);
-                        self.event_listener.updated_friends().await;
-                    },
-                    BridgeEvent::FriendRemove => {
-                        // Ohoho, you didn't think it would be that easy, did you?
-                        // You can have multiple friend-relations
-                        // And whilst F-Chat-proper forgets this and falls out of sync,
-                        // I'm not that stupid.
-                        self.refresh_fast().await.expect("Failed to get new token (RTB FriendRemove)");
-                        let ticket = self.ticket.read().ticket.clone();
-                        // Later move this into client-proper and force it to update all states it gets
-                        let mut friends = get_friends_list(
-                            &self.http_client, 
-                            &ticket,
-                            &self.username
-                        ).await.expect("Failed to get friends list");
-                        self.friends.clear();
-                        for v in friends.inner.friends.drain(..) {
-                            self.friends.insert(v.source);
-                        }
-                        self.event_listener.updated_friends().await;
-                    },
-                    BridgeEvent::FriendRequest => {
-                        eprintln!("Not handling RTB FriendRequest");
-                    }
-                }
-            }
-            ServerCommand::GlobalOps { ops } => {
-                *self.admins.write() = ops;
-            },
-            ServerCommand::Ignore { action, characters, character } => {
-                match action {
-                    IgnoreAction::Init | IgnoreAction::List => *self.ignorelist.write() = characters,
-                    IgnoreAction::Add => self.ignorelist.write().push(character),
-                    IgnoreAction::Delete => self.ignorelist.write().retain(|v| *v!=character), 
-                    _ => println!("Unhandled ignore action {action:?} -- {characters:?} -- {character:?}")
-                }
-            },
-            ServerCommand::GlobalChannels { mut channels } => {
-                for channel in channels.drain(..) {
-                    self.global_channels.insert(channel);
-                }
-            },
-
-            // Ping
-            ServerCommand::Ping => {
-                event.session.send(ClientCommand::Pong).await.expect("Failed to Pong!");
-                self.event_listener.ping(event.session).await;
-            }
-
-            _ => eprintln!("Unhandled server command {event:?}")
-        }
+    fn drop_session(&self, session: &Character) {
+        self.sessions.write().retain(|v|v.character != *session)
     }
 
-    pub async fn start(&self) {
-        let mut chan = self.rcv_channel.lock().await; // Lock it away forever. Sorry kid - Mine now.
-        // using an async Mutex only because this holds the lock across an await boundary
-        while let Some(event) = chan.recv().await {
-            self.dispatch(event).await;
+    pub(crate) async fn dispatch(&self, event: Event) {
+        match event.event {
+            crate::session::SessionEvent::Reconnect => {
+                // Reconnect the session; treat it as having disconnected
+                self.refresh_fast();
+                let ticket = self.token.read().ticket.clone();
+                let new_session = event.session.reconnect(
+                    self.username, 
+                    ticket, 
+                    self.client_name.clone(), 
+                    self.client_version.clone()
+                ).await;
+                self.drop_session(&event.session.character);
+                match new_session {
+                    Ok(session) => self.sessions.write().push(session),
+                    Err(err) => self.event_listener.session_error(event.session, err).await,
+                }
+                self.event_listener.sessions_updated().await
+            },
+            crate::session::SessionEvent::Disconnected(err) => {
+                self.drop_session(&event.session.character);
+                self.event_listener.session_disconnected(event.session, err).await;
+                self.event_listener.sessions_updated().await;
+            },
+            crate::session::SessionEvent::Command(command) => {
+                self.event_listener.raw_command(event.session.clone(), &command);
+                match command {
+                    ServerCommand::GlobalOps { ops } => if self.cache.set_global_ops(ops).unwrap() {self.event_listener.updated_global_ops().await},
+                    ServerCommand::GlobalOpped { character } => if self.cache.add_global_op(character).unwrap() {self.event_listener.updated_global_ops().await},
+                    ServerCommand::GlobalDeopped { character } => if self.cache.remove_global_op(character).unwrap() {self.event_listener.updated_global_ops().await},
+
+                    ServerCommand::Banned { operator, channel, character } => todo!("(Banned event)"), // Need a moderation abstraction
+                    ServerCommand::Kicked { operator, channel, character } => todo!("(Kick event)"), // Each event has channel, character, operator
+                    ServerCommand::Timeout { channel, character, length, operator } => todo!("(Timeout event)"), // No examples of use though.
+
+                    ServerCommand::Broadcast { message, character } => self.event_listener.broadcast(character, message).await,
+                    ServerCommand::ChannelDescription { channel, description } => {
+                        if self.cache.update_channel(Cow::Borrowed(&channel), PartialChannelData {
+                            description: Some(description.into()),
+                            ..Default::default()
+                        }).unwrap() {
+                            self.event_listener.updated_channel(channel).await
+                        }
+                    },
+                    ServerCommand::GlobalChannels { mut channels } => {
+                        for channel in channels.iter() {
+                            if self.cache.update_channel(Cow::Borrowed(&channel.name), PartialChannelData {
+                                title: Some(Cow::from(channel.name.0.as_ref())),
+                                mode: Some(channel.mode),
+                                ..Default::default()
+                            }).unwrap() {
+                                self.event_listener.updated_channel(channel.name.clone()).await
+                            }
+                        }
+                        if self.cache.set_global_channels(Cow::Owned(channels.drain(..).map(|v|(v.name, v.characters)).collect())).unwrap() {
+                            self.event_listener.updated_channel_lists().await
+                        }
+                    },
+                    ServerCommand::Invited { sender, title, name } => {
+                        if self.cache.update_channel(Cow::Borrowed(&name), PartialChannelData {
+                            title: Some(title.into()),
+                            ..Default::default()
+                        }).unwrap() {
+                            self.event_listener.updated_channel(name).await
+                        }
+                        self.event_listener.invited(event.session, name, sender).await
+                    },
+                    
+                    ServerCommand::Opped { character, channel } => if self.cache.add_channel_op(Cow::Borrowed(&channel), Cow::Owned(character)).unwrap() {self.event_listener.updated_channel(channel).await},
+                    ServerCommand::Ops { channel, oplist } => if self.cache.set_channel_ops(Cow::Borrowed(&channel), Cow::Owned(oplist)).unwrap() {self.event_listener.updated_channel(channel).await},
+                    ServerCommand::Connected { .. } => self.event_listener.ready(event.session).await,
+                    ServerCommand::Deopped { character, channel } => if self.cache.remove_channel_op(Cow::Borrowed(&channel), Cow::Owned(character)).unwrap() {self.event_listener.updated_channel(channel).await},
+                    ServerCommand::SetOwner { character, channel } => todo!(), // It is unclear how this information is conveyed otherwise.
+                    ServerCommand::Error { number, message } => self.event_listener.error(event.session, number.into(), message).await,
+                    ServerCommand::Search { characters, kinks } => todo!("FKS -- Should never reach client"), // Wrap up into session 
+                    ServerCommand::Offline { character } => {
+                        if self.cache.update_character(Cow::Borrowed(&character), PartialUserData {
+                            status: Some(Status::Offline),
+                            ..Default::default()
+                        }).unwrap() {
+                            self.event_listener.updated_character(character).await
+                        }
+                    },
+                    ServerCommand::Hello { message } => panic!("HLO -- Should never reach client"), // Sunk by session impl
+                    ServerCommand::ChannelData { users, channel, mode } => {
+                        if self.cache.insert_channel(Cow::Borrowed(&channel), PartialChannelData {
+                            mode: Some(mode),
+                            ..Default::default()
+                        }, Cow::Owned(users)).unwrap() {
+                            self.event_listener.updated_channel(channel).await
+                        }
+                    },
+                    ServerCommand::IdentifySuccess { character } => panic!("IDN -- Should never reach client"), // Sunk by session impl
+                    ServerCommand::JoinedChannel { channel, character, title } => {
+                        if self.cache.update_channel(Cow::Borrowed(&channel), PartialChannelData {
+                            title: Some(title.into()),
+                            ..Default::default()
+                        }).unwrap() || self.cache.add_channel_member(Cow::Borrowed(&channel), character).unwrap() {
+                            self.event_listener.updated_channel(channel).await
+                        }
+                        if event.session.character == character {
+                            self.event_listener.updated_session_channels(event.session).await
+                        }
+                    },
+                    ServerCommand::Kinks { response_type, message, key, value } => eprintln!("Received KID from server -- Use HTTP/JSON endpoint instead"),
+                    ServerCommand::LeftChannel { channel, character } => {
+                        if self.cache.remove_channel_member(Cow::Borrowed(&channel), character).unwrap() {
+                            self.event_listener.updated_channel(channel).await
+                        }
+                        if event.session.character == character {
+                            self.event_listener.updated_session_channels(event.session).await
+                        }
+                    },
+                    ServerCommand::ListOnline { mut characters } => {
+                        for character in characters.drain(..) {
+                            if self.cache.update_character(Cow::Borrowed(&character.0), PartialUserData {
+                                gender: Some(character.1),
+                                status: Some(character.2),
+                                status_message: Some(character.3.into()),
+                            }).unwrap() {
+                                self.event_listener.updated_character(character.0).await
+                            }
+                        }
+                    },
+                    ServerCommand::NewConnection { status, gender, identity } => {
+                        if self.cache.update_character(Cow::Borrowed(&identity), PartialUserData {
+                            status: Some(status),
+                            gender: Some(gender),
+                            ..Default::default()
+                        }).unwrap() {
+                            self.event_listener.updated_character(identity).await
+                        }
+                    },
+                    ServerCommand::Ignore { action, characters, character } => eprintln!("Missing handler for IGN"), // Should track
+                    ServerCommand::Friends { characters } => {}, // We ignore this because it's bad data.
+                    ServerCommand::Channels { mut channels } => {
+                        for channel in channels.iter() {
+                            if self.cache.update_channel(Cow::Borrowed(&channel.name), PartialChannelData {
+                                title: Some(channel.title.into()),
+                                ..Default::default()
+                            }).unwrap() {
+                                self.event_listener.updated_channel(channel.name.clone()).await
+                            }
+                        }
+                        if self.cache.set_unofficial_channels(Cow::Owned(channels.drain(..).map(|v|(v.name, v.characters)).collect())).unwrap() {
+                            self.event_listener.updated_channel_lists().await
+                        }
+                    },
+                    ServerCommand::Ping => panic!("PIN -- Should never reach client"), // Sunk by session impl
+                    ServerCommand::ProfileData { response_type, message, key, value } => eprintln!("Received PRD from server -- Use HTTP/JSON endpoint instead"),
+                    ServerCommand::PrivateMessage { character, message } => {
+                        let source = MessageChannel::PrivateMessage(event.session.character, character);
+                        let content = MessageContent::Message(message.clone());
+                        if self.cache.insert_message(source.clone(), Message {
+                            timestamp: Utc::now(),
+                            character,
+                            content: content.clone(), // TODO: Ouch...
+                        }).unwrap() {
+                            self.event_listener.message(event.session, source, character, content).await
+                        }
+                    },
+                    ServerCommand::Message { character, message, channel } => {
+                        let source = MessageChannel::Channel(channel);
+                        let content = MessageContent::Message(message.clone());
+                        if self.cache.insert_message(source.clone(), Message {
+                            timestamp: Utc::now(),
+                            character,
+                            content: content.clone(),
+                        }).unwrap() {
+                            self.event_listener.message(event.session, source, character, content).await
+                        }
+                    },
+                    ServerCommand::Ad { character, message, channel } => {
+                        if self.cache.insert_ad(channel, character, message) {
+                            self.event_listener.ad(channel, character, message);
+                        }
+                    },
+                    ServerCommand::Roll { target, results, response_type, rolls, character, endresult, message } => {
+                        // I hate this command signature with a passion fruit.
+                        let source = match target {
+                            Target::Channel { channel } => MessageChannel::Channel(channel),
+                            Target::Character { recipient } => MessageChannel::PrivateMessage(recipient, character),
+                        };
+                        let content = MessageContent::Roll(rolls, results, endresult);
+                        if self.cache.insert_message(source.clone(), Message {
+                            timestamp: Utc::now(),
+                            character,
+                            content: content.clone(),
+                        }).unwrap() {
+                            self.event_listener.message(event.session, source, character, content).await
+                        }
+                    },
+                    ServerCommand::ChannelMode { mode, channel } => {
+                        if self.cache.update_channel(Cow::Borrowed(&channel), PartialChannelData {
+                            mode: Some(mode),
+                            ..Default::default()
+                        }).unwrap() {
+                            self.event_listener.updated_channel(channel).await
+                        }
+                    },
+                    ServerCommand::BridgeEvent { response_type, name } => {
+                        match response_type {
+                            BridgeEvent::BookmarkAdd => {
+                                if self.cache.add_bookmark(Cow::Owned(name)).unwrap() {
+                                    self.event_listener.updated_bookmarks().await
+                                }
+                            },
+                            BridgeEvent::BookmarkRemove => {
+                                if self.cache.remove_bookmark(Cow::Owned(name)).unwrap() {
+                                    self.event_listener.updated_bookmarks().await
+                                }
+                            },
+                            BridgeEvent::FriendAdd | BridgeEvent::FriendRemove => {
+                                // Both FriendAdd and FriendRemove don't include the full relation data,
+                                // So we sync the friend list via the HTTP/JSON endpoint.
+                                self.sync_friends_bookmarks().await
+                            },
+                            BridgeEvent::FriendRequest => {
+                                eprintln!("Not handling RTB FriendRequest");
+                            }
+                        }
+                    },
+                    ServerCommand::Report { action, moderator, character, timestamp, callid, report, logid } => todo!(),
+                    ServerCommand::Status { status, character, statusmsg } => {
+                        if self.cache.update_character(Cow::Borrowed(&character), PartialUserData {
+                            status: Some(status),
+                            status_message: Some(statusmsg.into()),
+                            ..Default::default()
+                        }).unwrap() {
+                            self.event_listener.updated_character(character).await
+                        }
+                    },
+                    ServerCommand::SystemMessage { message, channel } => {
+                        // May need to look into parsing system messages.
+                        self.event_listener.system_message(event.session, channel, message).await
+                    },
+                    ServerCommand::Typing { character, status } => {
+                        self.event_listener.typing(event.session, character, status).await
+                    },
+                    ServerCommand::Uptime { time, starttime, startstring, accepted, channels, users, maxusers } => eprintln!("Not handling UPT"),
+                    ServerCommand::Variable(_) => panic!("VAR -- Should never reach client"), // Sunk by Session impl
+                }
+            },
+            crate::session::SessionEvent::Error(err) => {
+                self.event_listener.session_error(event.session, err);
+            },
         }
     }
 }
 
 #[async_trait]
 #[allow(unused_variables)]
-pub trait EventListener {
-    async fn raw_error(&self, ctx: Arc<Session>, id: i32, message: &str) {
+pub trait EventListener: std::marker::Sync + Sized + std::marker::Send {
+    async fn raw_command(&self, ctx: Arc<Session>, command: &ServerCommand) {}
+
+    async fn session_error(&self, ctx: Arc<Session>, error: SessionError) {}
+    async fn sessions_updated(&self) {}
+    async fn session_disconnected(&self, ctx: Arc<Session>, error: ProtocolError) {}
+    async fn ready(&self, ctx: Arc<Session>) {}
+
+    async fn broadcast(&self, character: Character, message: String) {}
+    async fn invited(&self, ctx: Arc<Session>, channel: Channel, sender: Character) {}
+    async fn ad(&self, channel: Channel, character: Character, ad: String) {}
+    async fn system_message(&self, ctx: Arc<Session>, channel: Channel, message: String) {}
+    async fn message(&self, ctx: Arc<Session>, channel: MessageChannel, character: Character, message: MessageContent) {}
+    async fn typing(&self, ctx: Arc<Session>, character: Character, status: TypingStatus) {}
+
+    async fn updated_friends(&self) {} // No need to send anything optimistically; end user can read off client
+    async fn updated_bookmarks(&self) {} // Ditto for bookmarks, although I'm unsure how it behaves...
+    async fn updated_channel(&self, channel: Channel) {} // Don't send the new data, because we don't track old data.
+    async fn updated_character(&self, user: Character) {} 
+    async fn updated_global_ops(&self) {}
+    async fn updated_channel_lists(&self) {}
+    async fn updated_session_channels(&self, session: Arc<Session>) {}
+
+    async fn error(&self, ctx: Arc<Session>, err: ProtocolError, message: String) {
         // Map the ID to an appropriate known error type. Use enums.
-        let err: ProtocolError = id.into();
         if err.is_fatal() {
             panic!("Fatal error: {err:?}")
         }
@@ -421,33 +489,4 @@ pub trait EventListener {
             eprintln!("Error {err:?}")
         }
     }
-
-    // Maybe unimplemented!() for these?
-    async fn hello(&self, _ctx: Arc<Session>, message: &str) {} 
-    async fn connected(&self, _ctx: Arc<Session>, count: u32) {}
-    async fn ping(&self, _ctx: Arc<Session>) {}
-    async fn list_online(&self) {}
-    async fn message(&self, _ctx: Arc<Session>, source: &MessageSource, target: &MessageTarget, message: &str) {}
-    async fn typing(&self, _ctx: Arc<Session>, character: Character, status: TypingStatus) {}
-    async fn error() {}
-
-    async fn updated_friends(&self) {} // No need to send anything optimistically; end user can read off client
-    async fn updated_bookmarks(&self) {} // Ditto for bookmarks, although I'm unsure how it behaves...
-    async fn updated_channel(&self, channel: Channel) {} // Don't send the new data, because we don't track old data.
-    async fn updated_character(&self, user: Character) {} 
-
-}
-
-// Oh, and let's introduce a variety of non-protocol abstractions, to unify the client abstraction.
-#[derive(Debug)]
-pub enum MessageTarget {
-    Broadcast,
-    Channel(Channel),
-    PrivateMessage(Character), 
-}
-
-#[derive(Debug)]
-pub enum MessageSource {
-    System,
-    Character(Character)
 }
