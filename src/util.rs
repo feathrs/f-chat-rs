@@ -223,3 +223,5 @@ pub(crate) mod timestamp {
         deserializer.deserialize_i64(TimestampVisitor)
     }
 }
+
+pub use timestamp::Timestamp;
