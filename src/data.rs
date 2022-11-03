@@ -1,7 +1,10 @@
 #![forbid(private_in_public)]
 
+use crate::{
+    stringable,
+    util::{timestamp::Timestamp, StackString},
+};
 use serde::{Deserialize, Serialize};
-use crate::{stringable, util::{StackString, timestamp::Timestamp}};
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone, Hash)]
 #[serde(rename_all = "PascalCase")]
@@ -144,8 +147,8 @@ pub enum Status {
     Dnd,
     Idle,
     Away,
-    Crown, // If you try to set crown, you will die.
-    Offline // Also this isn't transmitted by the server but it's sane and internal.
+    Crown,   // If you try to set crown, you will die.
+    Offline, // Also this isn't transmitted by the server but it's sane and internal.
 }
 impl Default for Status {
     fn default() -> Self {
@@ -169,7 +172,7 @@ impl Default for TypingStatus {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone, Hash)]
 pub struct FriendRelation {
     pub own_character: Character,
-    pub other_character: Character
+    pub other_character: Character,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone, Hash)]
@@ -178,7 +181,7 @@ pub enum KinkInterest {
     Fave,
     Yes,
     Maybe,
-    No
+    No,
 }
 // No default impl for KinkInterest because it's not sane; unlisted kinks should never be in a collection.
 
@@ -234,7 +237,7 @@ stringable!(CharacterId: u64, CharacterIdProxy, "CharacterIdProxy");
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum MessageChannel {
     Channel(Channel),
-    PrivateMessage(Character, Character)
+    PrivateMessage(Character, Character),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -242,7 +245,7 @@ pub struct Message {
     #[serde(with = "crate::util::timestamp")]
     pub timestamp: Timestamp,
     pub character: Character,
-    pub content: MessageContent
+    pub content: MessageContent,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
@@ -250,7 +253,7 @@ pub enum MessageContent {
     Message(String),
     Emote(String),
     Roll(Vec<String>, Vec<i32>, i32),
-    Bottle(Character)
+    Bottle(Character),
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]

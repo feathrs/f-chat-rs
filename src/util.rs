@@ -1,17 +1,31 @@
-use std::{ops::{Deref, DerefMut}, fmt::Display};
+use std::{
+    fmt::Display,
+    ops::{Deref, DerefMut},
+};
 
-use serde::{Serialize, Deserialize, de::Visitor};
+use serde::{de::Visitor, Deserialize, Serialize};
 
 // Bite me.
 #[macro_export]
 macro_rules! stringable {
     ($i:ident : $t:ty, $pi:ident, $pl:literal) => {
-        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Hash)]
+        #[derive(
+            serde::Serialize,
+            serde::Deserialize,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Debug,
+            Clone,
+            Copy,
+            Hash,
+        )]
         #[serde(into=$pl)]
         #[serde(try_from=$pl)]
         pub struct $i(pub $t);
         impl From<$i> for $pi {
-            fn from(v:$i) -> $pi {
+            fn from(v: $i) -> $pi {
                 $pi::String(v.0.to_string())
             }
         }
@@ -20,7 +34,7 @@ macro_rules! stringable {
             fn try_from(other: $pi) -> Result<$i, Self::Error> {
                 match other {
                     $pi::String(val) => val.parse().map(|v| $i(v)),
-                    $pi::Other(val) => Ok($i(val))
+                    $pi::Other(val) => Ok($i(val)),
                 }
             }
         }
@@ -29,7 +43,7 @@ macro_rules! stringable {
         #[serde(untagged)]
         enum $pi {
             String(String),
-            Other($t)
+            Other($t),
         }
     };
 }
@@ -42,7 +56,7 @@ impl<const N: usize> StackString<N> {
     // Take &str to promise that it's valid utf8
     pub fn new(from: &str) -> Self {
         let len = from.len();
-        let mut data = [0u8;N];
+        let mut data = [0u8; N];
         let (left, _) = data.split_at_mut(len); // We already promise len <= N; use unchecked when stable
         left.copy_from_slice(from.as_bytes());
         StackString(data, len)
@@ -65,13 +79,13 @@ impl<const N: usize> Deref for StackString<N> {
     fn deref(&self) -> &Self::Target {
         // I promise that this contains a viable string of bytes by contract.
         // This is fine for deref because this uses mem::transmute under the hood.
-        unsafe {std::str::from_utf8_unchecked(&self.0[..self.1])}
+        unsafe { std::str::from_utf8_unchecked(&self.0[..self.1]) }
     }
 }
 
 impl<const N: usize> DerefMut for StackString<N> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe {std::str::from_utf8_unchecked_mut(&mut self.0[..self.1])}
+        unsafe { std::str::from_utf8_unchecked_mut(&mut self.0[..self.1]) }
     }
 }
 
@@ -103,7 +117,8 @@ impl<const N: usize> Display for StackString<N> {
 impl<const N: usize> Serialize for StackString<N> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::Serializer {
+        S: serde::Serializer,
+    {
         serializer.serialize_str(&**self)
     }
 }
@@ -159,9 +174,10 @@ impl<'de, const N: usize> Visitor<'de> for StackStringVisitor<N> {
     type Value = StackString<N>;
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error, {
-        StackString::try_new(v).map_err(|_|E::custom("deserialized string is too long"))
+    where
+        E: serde::de::Error,
+    {
+        StackString::try_new(v).map_err(|_| E::custom("deserialized string is too long"))
     }
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -172,21 +188,25 @@ impl<'de, const N: usize> Visitor<'de> for StackStringVisitor<N> {
 impl<'de, const N: usize> Deserialize<'de> for StackString<N> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
-        D: serde::Deserializer<'de> {
+        D: serde::Deserializer<'de>,
+    {
         deserializer.deserialize_str(StackStringVisitor::<N>())
     }
 }
 
 pub(crate) mod timestamp {
-    use chrono::{DateTime, Utc, NaiveDateTime};
-    use serde::{Serializer, de::Visitor, Deserializer};
+    use chrono::{DateTime, NaiveDateTime, Utc};
+    use serde::{de::Visitor, Deserializer, Serializer};
 
-    // Why not NaiveDateTime? 
+    // Why not NaiveDateTime?
     // The server has a timezone in mind when it sends these timestamps.
     // Converting to/from it is important for consumers.
     pub type Timestamp = DateTime<Utc>;
 
-    pub fn serialize<S>(timestamp: &Timestamp, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    pub fn serialize<S>(timestamp: &Timestamp, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         serializer.serialize_u64(timestamp.timestamp() as u64)
     }
 
@@ -199,27 +219,39 @@ pub(crate) mod timestamp {
         }
 
         fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error, {
+        where
+            E: serde::de::Error,
+        {
             Ok(DateTime::from_utc(NaiveDateTime::from_timestamp(v, 0), Utc))
         }
 
         fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error, {
+        where
+            E: serde::de::Error,
+        {
             // Okay, it's i64. Still...
-            Ok(DateTime::from_utc(NaiveDateTime::from_timestamp(v as i64, 0), Utc))
+            Ok(DateTime::from_utc(
+                NaiveDateTime::from_timestamp(v as i64, 0),
+                Utc,
+            ))
         }
 
         fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error, {
+        where
+            E: serde::de::Error,
+        {
             // Floats lose their precision long before they represent values larger than i64 max value
-            Ok(DateTime::from_utc(NaiveDateTime::from_timestamp(v as i64, 0), Utc))
+            Ok(DateTime::from_utc(
+                NaiveDateTime::from_timestamp(v as i64, 0),
+                Utc,
+            ))
         }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Timestamp, D::Error> where D: Deserializer<'de> {
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Timestamp, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         deserializer.deserialize_i64(TimestampVisitor)
     }
 }

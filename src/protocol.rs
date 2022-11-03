@@ -1,4 +1,7 @@
-use crate::{data::*, util::{timestamp::Timestamp, StackString}};
+use crate::{
+    data::*,
+    util::{timestamp::Timestamp, StackString},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, from_value, to_value, to_writer, Value};
 use std::{io::Write as _, str::FromStr};
@@ -19,22 +22,20 @@ struct CommandDummy {
 // These should later return a specific Result instead.
 pub fn parse_command(command: &str) -> ServerCommand {
     from_value(
-        to_value(
-            if command.len() < 4 {
-                // If the command has no body.
-                CommandDummy {
-                    command: StackString::new(command), 
-                    data: Value::Null
-                }
-            } else {
-                // Split the command into the JSON data body and the command head
-                let (head, data) = command.split_at(4);
-                CommandDummy {
-                    command: StackString::new(head.trim()),
-                    data: from_str(data).expect("Unable to parse data to Value"),
-                }
+        to_value(if command.len() < 4 {
+            // If the command has no body.
+            CommandDummy {
+                command: StackString::new(command),
+                data: Value::Null,
             }
-        )
+        } else {
+            // Split the command into the JSON data body and the command head
+            let (head, data) = command.split_at(4);
+            CommandDummy {
+                command: StackString::new(head.trim()),
+                data: from_str(data).expect("Unable to parse data to Value"),
+            }
+        })
         .expect("Unable to convert CommandDummy to Value"),
     )
     .expect("Unable to convert Value to ServerCommand") // Forgive me, for I have sinned.
@@ -138,9 +139,9 @@ pub enum ClientCommand {
         account: String,
         ticket: String,
         character: Character,
-        #[serde(rename="cname")]
+        #[serde(rename = "cname")]
         client_name: String,
-        #[serde(rename="cversion")]
+        #[serde(rename = "cversion")]
         client_version: String,
     }, // method should always be "ticket"
     #[serde(rename = "IGN")]
@@ -174,10 +175,10 @@ pub enum ClientCommand {
     #[serde(rename = "PRO")]
     ProfileTags { character: Character }, // Advised to use JSON endpoint
     #[serde(rename = "RLL")]
-    Roll { 
+    Roll {
         #[serde(flatten)]
-        target: Target, 
-        dice: String 
+        target: Target,
+        dice: String,
     },
     #[serde(rename = "RLD")]
     Reload { save: String }, // ???
@@ -223,7 +224,10 @@ pub enum ServerCommand {
     #[serde(rename = "AOP")]
     GlobalOpped { character: Character },
     #[serde(rename = "BRO")]
-    Broadcast { message: String, character: Character },
+    Broadcast {
+        message: String,
+        character: Character,
+    },
     #[serde(rename = "CDS")]
     ChannelDescription {
         channel: Channel,
@@ -293,7 +297,7 @@ pub enum ServerCommand {
     Hello { message: String },
     #[serde(rename = "ICH")]
     ChannelData {
-        #[serde(with="character_identity::vec")]
+        #[serde(with = "character_identity::vec")]
         users: Vec<Character>,
         channel: Channel,
         mode: ChannelMode,
@@ -303,7 +307,7 @@ pub enum ServerCommand {
     #[serde(rename = "JCH")]
     JoinedChannel {
         channel: Channel,
-        #[serde(with="character_identity")]
+        #[serde(with = "character_identity")]
         character: Character,
         title: String,
     },
@@ -452,32 +456,39 @@ pub enum Variable {
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(untagged)]
 pub enum Target {
-    Channel {channel: Channel},
-    Character {recipient: Character}
+    Channel { channel: Channel },
+    Character { recipient: Character },
 }
 
 mod character_identity {
     #![allow(missing_debug_implementations)]
-    use serde::{Deserializer, Deserialize};
     use super::Character;
+    use serde::{Deserialize, Deserializer};
 
     #[derive(Deserialize)]
     #[repr(transparent)]
     struct DCharacterIdentity {
-        identity: Character
+        identity: Character,
     }
 
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Character, D::Error> where D: Deserializer<'de> {
-        DCharacterIdentity::deserialize(deserializer).map(|v|v.identity)
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Character, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        DCharacterIdentity::deserialize(deserializer).map(|v| v.identity)
     }
 
     pub(crate) mod vec {
-        use serde::{Deserializer, Deserialize};
         use super::super::Character;
         use super::DCharacterIdentity;
+        use serde::{Deserialize, Deserializer};
 
-        pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Character>, D::Error> where D: Deserializer<'de> {
-            <Vec::<DCharacterIdentity>>::deserialize(deserializer).map(|vec|unsafe{std::mem::transmute(vec)})
+        pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Character>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            <Vec<DCharacterIdentity>>::deserialize(deserializer)
+                .map(|vec| unsafe { std::mem::transmute(vec) })
         }
     }
 }
@@ -504,7 +515,7 @@ pub struct ChannelInfo {
 pub struct GlobalChannelInfo {
     pub name: Channel,
     pub mode: ChannelMode,
-    pub characters: u32
+    pub characters: u32,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
@@ -541,21 +552,21 @@ pub enum IgnoreAction {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Copy, Clone)]
 #[serde(rename_all = "lowercase")]
 pub enum BridgeEvent {
-    #[serde(rename="trackadd")]
+    #[serde(rename = "trackadd")]
     BookmarkAdd,
-    #[serde(rename="trackrem")]
+    #[serde(rename = "trackrem")]
     BookmarkRemove,
-    #[serde(rename="friendadd")]
+    #[serde(rename = "friendadd")]
     FriendAdd,
-    #[serde(rename="friendremove")]
+    #[serde(rename = "friendremove")]
     FriendRemove,
-    #[serde(rename="friendrequest")]
-    FriendRequest
+    #[serde(rename = "friendrequest")]
+    FriendRequest,
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Copy)]
-#[serde(into="KinkIdExpanded")]
-#[serde(try_from="KinkIdExpanded")]
+#[serde(into = "KinkIdExpanded")]
+#[serde(try_from = "KinkIdExpanded")]
 pub struct KinkId(pub u32);
 impl From<KinkId> for KinkIdExpanded {
     fn from(val: KinkId) -> Self {
@@ -567,7 +578,7 @@ impl TryFrom<KinkIdExpanded> for KinkId {
     fn try_from(other: KinkIdExpanded) -> Result<KinkId, Self::Error> {
         match other {
             KinkIdExpanded::String(val) => val.parse().map(KinkId),
-            KinkIdExpanded::Number(val) => Ok(KinkId(val))
+            KinkIdExpanded::Number(val) => Ok(KinkId(val)),
         }
     }
 }
@@ -576,7 +587,7 @@ impl TryFrom<KinkIdExpanded> for KinkId {
 #[serde(untagged)]
 enum KinkIdExpanded {
     String(String),
-    Number(u32)
+    Number(u32),
 }
 
 #[derive(Debug, num_enum::FromPrimitive)]
@@ -638,7 +649,7 @@ pub enum ProtocolError {
     FrontpageDice = -10,
 
     #[num_enum(default)]
-    Other = 9999
+    Other = 9999,
 }
 
 impl ProtocolError {
@@ -655,7 +666,17 @@ impl ProtocolError {
         39: The user is being timed out from the server.
         40: The user is being kicked from the server.
         */
-        matches!(self, Self::FullServer | Self::Banned | Self::TooManySessions | Self::AnotherConnection | Self::InvalidAuthentication | Self::TimeOut | Self::Kick | Self::InternalError)
+        matches!(
+            self,
+            Self::FullServer
+                | Self::Banned
+                | Self::TooManySessions
+                | Self::AnotherConnection
+                | Self::InvalidAuthentication
+                | Self::TimeOut
+                | Self::Kick
+                | Self::InternalError
+        )
     }
 
     /// The errors themselves do not literally contain messages, but they are often transmitted with messages.

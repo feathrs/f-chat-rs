@@ -1,13 +1,34 @@
-use std::sync::{Arc, atomic::AtomicI32};
+use std::sync::{atomic::AtomicI32, Arc};
 
-use dashmap::{DashMap, DashSet}; use thiserror::Error;
+use dashmap::{DashMap, DashSet};
+use thiserror::Error;
 // Optionally switch to BTree and manually manage R/W sync
-use tokio::{sync::{Mutex as AsyncMutex, mpsc::{Sender, error::SendError}}, task::JoinHandle};
-use futures_util::{stream::{SplitSink, SplitStream}, SinkExt, StreamExt, TryStreamExt, join};
-use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, tungstenite::{Message, error::ProtocolError as WebsocketError}, connect_async_tls_with_config};
+use futures_util::{
+    join,
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt, TryStreamExt,
+};
 use tokio::net::TcpStream;
+use tokio::{
+    sync::{
+        mpsc::{error::SendError, Sender},
+        Mutex as AsyncMutex,
+    },
+    task::JoinHandle,
+};
+use tokio_tungstenite::{
+    connect_async_tls_with_config,
+    tungstenite::{error::ProtocolError as WebsocketError, Message},
+    MaybeTlsStream, WebSocketStream,
+};
 
-use crate::{data::{Character, TypingStatus, Channel}, protocol::{ServerCommand, ClientCommand, IdentifyMethod, prepare_command, parse_command, Variable, ProtocolError, Target}};
+use crate::{
+    data::{Channel, Character, TypingStatus},
+    protocol::{
+        parse_command, prepare_command, ClientCommand, IdentifyMethod, ProtocolError,
+        ServerCommand, Target, Variable,
+    },
+};
 
 #[derive(Debug, Default, Clone)]
 pub struct Variables {
@@ -18,21 +39,21 @@ pub struct Variables {
     pub ad_cooldown: f32,
     pub status_cooldown: f32,
     pub icon_blacklist: Vec<Channel>, // I'm not sure that this is actually session-bound
-    // Actually I'm not sure that any of these are session-bound.
+                                      // Actually I'm not sure that any of these are session-bound.
 }
 
 #[derive(Debug)]
 pub enum SessionEvent {
-    Reconnect, // Asking the session-manager to reconnect the session.
+    Reconnect,                   // Asking the session-manager to reconnect the session.
     Disconnected(ProtocolError), // Fatal* disconnects caused by server
     Command(ServerCommand),
-    Error(SessionError)
+    Error(SessionError),
 }
 
 #[derive(Debug)]
 pub struct Event {
     pub session: Arc<Session>,
-    pub event: SessionEvent
+    pub event: SessionEvent,
 }
 
 type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
@@ -47,7 +68,7 @@ pub struct Session {
     pub last_err: AtomicI32,
 
     write: StreamWriter,
-    event_channel: Sender<Event>
+    event_channel: Sender<Event>,
 }
 
 #[derive(Error, Debug)]
@@ -61,7 +82,7 @@ pub enum SessionError {
     #[error("VAR command has arrived out of sync")]
     LateVarCommand,
     #[error("IDN command has arrived out of sync")]
-    LateIdentifyCommand
+    LateIdentifyCommand,
 }
 
 pub type SessionResult<T> = Result<T, SessionError>;
@@ -69,8 +90,17 @@ pub type SessionResult<T> = Result<T, SessionError>;
 impl Session {
     const WS_URL: &'static str = "wss://chat.f-list.net/chat2";
 
-    pub async fn connect(account: String, ticket: String, client_name: String, client_version: String, character: Character, event_channel: Sender<Event>) -> SessionResult<Arc<Self>> {
-        let mut socket = Session::connect_internal(account, ticket, client_name, client_version, character).await?;
+    pub async fn connect(
+        account: String,
+        ticket: String,
+        client_name: String,
+        client_version: String,
+        character: Character,
+        event_channel: Sender<Event>,
+    ) -> SessionResult<Arc<Self>> {
+        let mut socket =
+            Session::connect_internal(account, ticket, client_name, client_version, character)
+                .await?;
         let (variables, next) = Session::read_variables(&mut socket).await?;
         let (write, read) = socket.split();
 
@@ -82,19 +112,29 @@ impl Session {
             last_err: AtomicI32::new(ProtocolError::Other as i32),
 
             write: AsyncMutex::new(write),
-            event_channel
+            event_channel,
         });
         Session::start_event_loop(session.clone(), read)?;
         if Session::handle_command(&session, &next).await? {
-            Session::emit_event(&session, SessionEvent::Command(next)).await.expect("Failed to send event (command - next)");
+            Session::emit_event(&session, SessionEvent::Command(next))
+                .await
+                .expect("Failed to send event (command - next)");
         }
 
         Ok(session)
     }
 
     // Produces a new Session based off of the current Session.
-    pub async fn reconnect(&self, account: String, ticket: String, client_name: String, client_version: String) -> SessionResult<Arc<Self>> {
-        let mut socket = Session::connect_internal(account, ticket, client_name, client_version, self.character).await?;
+    pub async fn reconnect(
+        &self,
+        account: String,
+        ticket: String,
+        client_name: String,
+        client_version: String,
+    ) -> SessionResult<Arc<Self>> {
+        let mut socket =
+            Session::connect_internal(account, ticket, client_name, client_version, self.character)
+                .await?;
         let (variables, next) = Session::read_variables(&mut socket).await?;
         let (write, read) = socket.split();
 
@@ -104,19 +144,27 @@ impl Session {
             private_messages: DashMap::new(),
             variables,
             last_err: AtomicI32::new(ProtocolError::Other as i32),
-            
+
             write: AsyncMutex::new(write),
             event_channel: self.event_channel.clone(),
         });
         Session::start_event_loop(session.clone(), read)?;
         if Session::handle_command(&session, &next).await? {
-            Session::emit_event(&session, SessionEvent::Command(next)).await.expect("Failed to send event (command - next)");
+            Session::emit_event(&session, SessionEvent::Command(next))
+                .await
+                .expect("Failed to send event (command - next)");
         }
 
         // Now try to re-join all of the old channels.
         let mut write = session.write.lock().await;
         for channel in self.channels.iter() {
-            write.feed(Message::Text(prepare_command(&ClientCommand::JoinChannel { channel: channel.to_owned() }))).await?
+            write
+                .feed(Message::Text(prepare_command(
+                    &ClientCommand::JoinChannel {
+                        channel: channel.to_owned(),
+                    },
+                )))
+                .await?
         }
         write.flush().await?;
         drop(write); // If I don't drop here, it complains that the guard still exists when I return session.
@@ -126,25 +174,36 @@ impl Session {
 
     // Sometimes, the existing session needs to be reconnected.
     // Because this uses the same logic as connect, this is abstracted.
-    async fn connect_internal(account: String, ticket: String, client_name: String, client_version: String, character: Character) -> SessionResult<Socket> {
+    async fn connect_internal(
+        account: String,
+        ticket: String,
+        client_name: String,
+        client_version: String,
+        character: Character,
+    ) -> SessionResult<Socket> {
         // Establish the connection
         let (mut socket, _) = connect_async_tls_with_config(Self::WS_URL, None, None).await?;
-        
+
         // Identify (IDN)
-        socket.send(Message::Text(prepare_command(&ClientCommand::Identify { 
-            method: IdentifyMethod::Ticket, 
-            account, 
-            ticket, 
-            character, 
-            client_name, 
-            client_version 
-        }))).await?;
+        socket
+            .send(Message::Text(prepare_command(&ClientCommand::Identify {
+                method: IdentifyMethod::Ticket,
+                account,
+                ticket,
+                character,
+                client_name,
+                client_version,
+            })))
+            .await?;
 
         // Wait for IDN response or blow up (protocol error)
         // Messages sent are -always- Text
         // Never Ping, Close, etc. Server does not follow recommendations for closing connections.
         if let Some(Message::Text(message)) = socket.try_next().await? {
-            if let ServerCommand::IdentifySuccess { character: character_id } = parse_command(&message) {
+            if let ServerCommand::IdentifySuccess {
+                character: character_id,
+            } = parse_command(&message)
+            {
                 assert_eq!(character, character_id);
                 Ok(socket)
             } else {
@@ -155,10 +214,17 @@ impl Session {
         }
     }
 
-    async fn emit_event(session: &Arc<Session>, event: SessionEvent) -> Result<(), SendError<Event>> {
-        session.event_channel.send(Event {
-            session: session.clone(), event
-        }).await
+    async fn emit_event(
+        session: &Arc<Session>,
+        event: SessionEvent,
+    ) -> Result<(), SendError<Event>> {
+        session
+            .event_channel
+            .send(Event {
+                session: session.clone(),
+                event,
+            })
+            .await
     }
 
     // Reads VAR from a socket until there's no more VAR, and yields the next command (should be HLO)
@@ -175,11 +241,9 @@ impl Session {
                         Variable::ChatCooldown(v) => vars.chat_cooldown = v,
                         Variable::StatusCooldown(v) => vars.status_cooldown = v,
                         Variable::IconBlacklist(v) => vars.icon_blacklist = v,
-                        other => eprintln!("Unhandled var {other:?}")
+                        other => eprintln!("Unhandled var {other:?}"),
                     },
-                    other => {
-                        return Ok((vars, other))
-                    }
+                    other => return Ok((vars, other)),
                 }
             } else {
                 return Err(SessionError::MiscConnectionFailure);
@@ -187,7 +251,10 @@ impl Session {
         }
     }
 
-    fn start_event_loop(session: Arc<Session>, read: SplitStream<Socket>) -> SessionResult<JoinHandle<()>> {
+    fn start_event_loop(
+        session: Arc<Session>,
+        read: SplitStream<Socket>,
+    ) -> SessionResult<JoinHandle<()>> {
         Ok(tokio::spawn(read.for_each(move |res| {let session = session.clone(); async move {
             // We don't want this to happen concurrently, because the events need to arrive in order
             // But they only need to arrive in order for any given connection.
@@ -226,31 +293,38 @@ impl Session {
         }})))
     }
 
-    async fn handle_command(session: &Arc<Session>, command: &ServerCommand) -> SessionResult<bool> {
+    async fn handle_command(
+        session: &Arc<Session>,
+        command: &ServerCommand,
+    ) -> SessionResult<bool> {
         match command {
             ServerCommand::Ping => session.send(ClientCommand::Pong).await.map(|_| false),
-            ServerCommand::Hello { .. } => Ok(false), 
+            ServerCommand::Hello { .. } => Ok(false),
             ServerCommand::Connected { .. } => Ok(true), // Because Connected is sent after Hello, it's a better "ready" event
 
             ServerCommand::Error { number, .. } => {
-                session.last_err.store(*number, std::sync::atomic::Ordering::Relaxed);
+                session
+                    .last_err
+                    .store(*number, std::sync::atomic::Ordering::Relaxed);
                 Ok(true)
-            },
+            }
 
-            ServerCommand::JoinedChannel { channel, character, .. } => {
+            ServerCommand::JoinedChannel {
+                channel, character, ..
+            } => {
                 if *character == session.character {
                     // If it was this session, update the joined-channels list.
                     session.channels.insert(*channel);
                 }
                 Ok(true)
-            },
+            }
             ServerCommand::LeftChannel { channel, character } => {
                 if *character == session.character {
                     // As above, so below.
                     session.channels.remove(channel);
                 }
                 Ok(true)
-            },
+            }
 
             ServerCommand::Typing { character, status } => {
                 if let Some(old) = session.private_messages.insert(*character, *status) {
@@ -258,25 +332,33 @@ impl Session {
                 } else {
                     Ok(true)
                 }
-            },
+            }
 
             // These shouldn't happen because they're handled in init
             ServerCommand::IdentifySuccess { .. } => Err(SessionError::LateIdentifyCommand),
             ServerCommand::Variable(_) => Err(SessionError::LateVarCommand),
 
             // Anything else, forward it to the client event-handler
-            _ => Ok(true)
+            _ => Ok(true),
         }
     }
 
     pub async fn send(&self, command: ClientCommand) -> SessionResult<()> {
-        Ok(self.write.lock().await.send(Message::Text(prepare_command(&command))).await?)
+        Ok(self
+            .write
+            .lock()
+            .await
+            .send(Message::Text(prepare_command(&command)))
+            .await?)
     }
 
     pub async fn send_message(&self, target: Target, message: String) -> SessionResult<()> {
         match target {
-            Target::Channel {channel} => self.send(ClientCommand::Message { channel, message }).await?,
-            Target::Character {recipient} => {
+            Target::Channel { channel } => {
+                self.send(ClientCommand::Message { channel, message })
+                    .await?
+            }
+            Target::Character { recipient } => {
                 let (ra, rb) = join!(
                     self.send(ClientCommand::PrivateMessage { recipient, message }),
                     self.send(ClientCommand::Typing {
@@ -292,13 +374,18 @@ impl Session {
 
     pub async fn send_dice(&self, target: Target, dice: String) -> SessionResult<()> {
         self.send(match target {
-            target @ Target::Channel{..} => ClientCommand::Roll { target, dice },
-            target @ Target::Character{..} => ClientCommand::Roll { target, dice }
-        }).await
+            target @ Target::Channel { .. } => ClientCommand::Roll { target, dice },
+            target @ Target::Character { .. } => ClientCommand::Roll { target, dice },
+        })
+        .await
     }
 
     pub async fn send_ad(&self, channel: Channel, ad: String) -> SessionResult<()> {
-        self.send(ClientCommand::Ad { channel, message: ad }).await
+        self.send(ClientCommand::Ad {
+            channel,
+            message: ad,
+        })
+        .await
     }
 
     pub async fn join_channel(&self, channel: Channel) -> SessionResult<()> {
