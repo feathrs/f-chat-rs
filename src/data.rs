@@ -253,7 +253,7 @@ pub enum MessageContent {
     Bottle(Character)
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Hash)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct ChannelData {
     pub channel: Channel,
     pub channel_mode: ChannelMode,
@@ -262,7 +262,7 @@ pub struct ChannelData {
     pub title: String,
 }
 
-#[derive(Debug, Default, Clone, Serialize, Deserialize, Hash)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct CharacterData {
     pub character: Character,
     pub gender: Gender,
