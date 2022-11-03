@@ -32,7 +32,7 @@ pub struct Client<T: EventListener, C: Cache> {
     password: String,
     token: RwLock<Token>,
     http_client: ReqwestClient,
-    pub default_character: Character,
+    // pub default_character: Character,
     pub own_characters: Vec<Character>,
 
     pub cache: C,
@@ -132,9 +132,9 @@ impl<E: EventListener + 'static, C: Cache + 'static> ClientBuilder<E, C> {
         
         let mut extra = ticket_init.extra.expect("Ticket init response did not send extra fields");
         let default_char = extra.default_character;
-        let default_character = extra.characters.iter()
-            .find_map(move |(char, id)| if id == &default_char {Some(*char)} else {None})
-            .ok_or(ClientError::NoDefaultCharacter)?;
+        // let default_character = extra.characters.iter()
+        //     .find_map(move |(char, id)| if id == &default_char {Some(*char)} else {None})
+        //     .ok_or(ClientError::NoDefaultCharacter)?;
         let own_characters = extra.characters.drain().map(|(character, _)|character).collect();
 
         self.cache.set_bookmarks(extra.bookmarks.drain(..).map(|v|v.name).collect::<Vec<_>>().into()).unwrap();
@@ -146,7 +146,7 @@ impl<E: EventListener + 'static, C: Cache + 'static> ClientBuilder<E, C> {
             username, password,
             token: RwLock::new(token),
             http_client: http,
-            default_character,
+            // default_character,
             own_characters,
             cache: self.cache,
             sessions: Default::default(),
