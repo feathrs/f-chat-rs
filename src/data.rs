@@ -235,8 +235,11 @@ stringable!(CharacterId: u64, CharacterIdProxy, "CharacterIdProxy");
 
 // Abstraction for unifying message streams
 #[derive(Debug, Serialize, Deserialize, Copy, Clone, PartialEq, Eq, Hash)]
+#[serde(tag = "type", content = "channel")]
+#[serde(rename_all = "lowercase")]
 pub enum MessageChannel {
     Channel(Channel),
+    #[serde(rename = "pm")]
     PrivateMessage(Character, Character),
 }
 
@@ -249,6 +252,8 @@ pub struct Message {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+#[serde(tag = "type", content = "content")]
+#[serde(rename_all = "lowercase")]
 pub enum MessageContent {
     Message(String),
     Emote(String),
