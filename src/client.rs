@@ -156,11 +156,12 @@ impl<E: EventListener + 'static, C: Cache + 'static> ClientBuilder<E, C> {
         // let default_character = extra.characters.iter()
         //     .find_map(move |(char, id)| if id == &default_char {Some(*char)} else {None})
         //     .ok_or(ClientError::NoDefaultCharacter)?;
-        let own_characters = extra
+        let mut own_characters = extra
             .characters
             .drain()
             .map(|(character, _)| character)
-            .collect();
+            .collect::<Vec<_>>();
+        own_characters.sort();
 
         self.cache
             .set_bookmarks(
