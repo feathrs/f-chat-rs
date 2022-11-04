@@ -103,7 +103,7 @@ impl<const N: usize> AsMut<str> for StackString<N> {
 
 impl<const N: usize> std::fmt::Debug for StackString<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("StackString").field(&self.0).finish()
+        f.debug_tuple("StackString").field(&self.as_ref()).finish()
     }
 }
 
