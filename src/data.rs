@@ -200,7 +200,7 @@ pub enum KinkInterest {
 // Channel -names- are limited to 64 characters ("64.4999" per error message)
 // Accordingly, this may later just become String again.
 #[derive(Serialize, Deserialize, Default, Copy, Clone, PartialOrd, Ord, Debug)]
-pub struct Channel(pub StackString<26>);
+pub struct Channel(pub StackString<32>);
 impl PartialEq for Channel {
     fn eq(&self, other: &Self) -> bool {
         self.0.eq_ignore_ascii_case(&*other.0)

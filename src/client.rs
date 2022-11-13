@@ -152,7 +152,7 @@ impl<E: EventListener + 'static, C: Cache + 'static> ClientBuilder<E, C> {
         let mut extra = ticket_init
             .extra
             .expect("Ticket init response did not send extra fields");
-        let default_char = extra.default_character;
+        // let default_char = extra.default_character;
         // let default_character = extra.characters.iter()
         //     .find_map(move |(char, id)| if id == &default_char {Some(*char)} else {None})
         //     .ok_or(ClientError::NoDefaultCharacter)?;
