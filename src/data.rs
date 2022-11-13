@@ -215,8 +215,10 @@ impl std::hash::Hash for Channel {
 
 // Characters are limited to 20 chars on creation.
 // If this gets changed, everything is going to explode. Whoops.
+// Note: Some super old characters have names exceeding 20 chars, e.g. "Eric the transformable human"
+// Why? Funny.
 #[derive(Serialize, Deserialize, Default, Copy, Clone, PartialOrd, Ord, Debug)]
-pub struct Character(pub StackString<20>);
+pub struct Character(pub StackString<32>);
 impl PartialEq for Character {
     fn eq(&self, other: &Self) -> bool {
         self.0.eq_ignore_ascii_case(&*other.0)
