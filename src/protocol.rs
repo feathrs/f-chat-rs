@@ -21,6 +21,7 @@ struct CommandDummy {
 // Use Serde to convert them to/from adjacent format
 // These should later return a specific Result instead.
 pub fn parse_command(command: &str) -> ServerCommand {
+    dbg!(command);
     from_value(
         to_value(if command.len() < 4 {
             // If the command has no body.
