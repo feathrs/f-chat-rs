@@ -1,5 +1,5 @@
 // Cache trait for the client.
-use std::borrow::Cow;
+use std::{borrow::Cow, collections::HashSet};
 
 use serde::Serialize;
 
@@ -97,8 +97,13 @@ pub trait Cache: std::marker::Sync + Sized + std::marker::Send {
     ) -> Result<Cow<[Message]>, Self::Error>;
     fn get_friend_relations(&self) -> Result<Cow<[FriendRelation]>, Self::Error>;
     fn get_friends(&self) -> Result<Cow<[Character]>, Self::Error> {
-        self.get_friend_relations()
-            .map(|v| v.iter().map(|c| c.other_character).collect())
+        self.get_friend_relations().map(|v| {
+            v.iter()
+                .map(|c| c.other_character)
+                .collect::<HashSet<_>>()
+                .drain()
+                .collect()
+        })
     }
     fn get_bookmarks(&self) -> Result<Cow<[Character]>, Self::Error>;
 }
